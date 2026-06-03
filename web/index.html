@@ -1,0 +1,3957 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>下田マップ</title>
+
+    <!-- エリア設定: secrets → config → config.local（任意）。新エリアは config.js のみ編集 -->
+    <script src="secrets.local.js" onerror="window.__SHIMODA_MAP_SECRETS__=window.__SHIMODA_MAP_SECRETS__||{}"></script>
+    <script src="config.js"></script>
+    <script src="config.local.js" onerror="void 0"></script>
+    <script>
+        (function () {
+            var cfg = window.__SHIMODA_MAP_CONFIG__;
+            if (cfg && cfg.APP_TITLE) document.title = cfg.APP_TITLE;
+            var gaId = cfg && cfg.GA_MEASUREMENT_ID;
+            if (!gaId) {
+                window.gtag = function () {};
+                return;
+            }
+            var s = document.createElement('script');
+            s.async = true;
+            s.src = 'https://www.googletagmanager.com/gtag/js?id=' + encodeURIComponent(gaId);
+            document.head.appendChild(s);
+            window.dataLayer = window.dataLayer || [];
+            function gtag(){dataLayer.push(arguments);}
+            window.gtag = gtag;
+            gtag('js', new Date());
+            gtag('config', gaId);
+        })();
+    </script>
+
+    <script src='https://api.mapbox.com/mapbox-gl-js/v3.1.0/mapbox-gl.js'></script>
+    <link href='https://api.mapbox.com/mapbox-gl-js/v3.1.0/mapbox-gl.css' rel='stylesheet' />
+    <!-- 日の出／日の入り・薄明（イラスト昼夜夕切り替え）。失敗・遅延時は昼画像のみ -->
+    <!-- async: ページ起動をブロックしない。getIllustrationPhase は typeof SunCalc === 'undefined' ガード済み -->
+    <script src="https://unpkg.com/suncalc@1.9.0/suncalc.js" async></script>
+    <!-- 神輿ルート（Turf）: メインマップ統合モジュール用 -->
+    <script type="importmap">
+    {
+        "imports": {
+            "@turf/turf": "https://esm.sh/@turf/turf@6.5.0"
+        }
+    }
+    </script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <style>
+        /* ============================================================
+           RESET & CSS VARIABLES
+           ============================================================ */
+        * { box-sizing: border-box; }
+
+        :root {
+            /* ===== Summer Resort Palette ===== */
+            --color-primary:    #0096C7;   /* Ocean Blue — マーカー・チェック・トグル */
+            --color-secondary:  #E0F7FF;   /* Light Sky */
+            --color-accent:     #FF5C38;   /* Sunset Coral — ニュースバッジ */
+            --color-nav:        #0077B6;   /* Deep Ocean — ナビボタン */
+            --color-filter:     #FF7043;   /* Coral Orange — 絞り込みボタン */
+            --color-layer:      #00BCD4;   /* Turquoise — レイヤーボタン */
+            --color-text-main:  #1A3A4A;   /* Navy */
+            --color-text-sub:   #6B8A9C;
+            --bg-glass:         rgba(255, 255, 255, 0.97);
+            --shadow-soft:      0 4px 24px rgba(0, 100, 180, 0.15);
+            --shadow-warm:      0 4px 16px rgba(255, 100, 50, 0.25);
+            --sidebar-width:    340px;
+        }
+
+        body {
+            margin: 0; padding: 0;
+            font-family: "Hiragino Kaku Gothic ProN", "Meiryo", sans-serif;
+            overflow: hidden;
+            -webkit-tap-highlight-color: transparent;
+            /* イラストマップ外側の背景色 */
+            background: #A8D8E8;
+        }
+
+        /* ============================================================
+           MAP
+           ============================================================ */
+        #map {
+            position: absolute; top: 0; bottom: 0; right: 0;
+            width: 100%;
+            transition: width 0.3s ease;
+            /* Mapbox のデフォルト黒ではなく、イラスト外周と同系色（ピッチ時の余白用） */
+            background: #A8D8E8;
+        }
+        /* Mapbox デフォルトロゴ・帰属を非表示 (地図外の余白で見えない) */
+        .mapboxgl-ctrl-bottom-right,
+        .mapboxgl-ctrl-bottom-left { display: none; }
+
+        /* ============================================================
+           LOADING INDICATOR
+           ============================================================ */
+        #loading {
+            position: absolute; top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            background: var(--bg-glass); padding: 15px 30px;
+            border-radius: 30px; font-weight: bold;
+            color: var(--color-primary); z-index: 9999;
+            pointer-events: none; box-shadow: var(--shadow-soft);
+            backdrop-filter: blur(5px);
+            -webkit-backdrop-filter: blur(5px);
+        }
+        @media (max-width: 767px) {
+            #loading {
+                backdrop-filter: none;
+                -webkit-backdrop-filter: none;
+            }
+        }
+        #loading .loading-retry {
+            display: none; margin-top: 8px; text-align: center;
+        }
+        #loading .loading-retry button {
+            pointer-events: auto; cursor: pointer;
+            background: var(--color-primary); color: white; border: none;
+            border-radius: 20px; padding: 6px 16px; font-size: 12px;
+            font-weight: bold;
+        }
+
+        /* ============================================================
+           LEFT CONTROLS (言語 / フィルター / レイヤー)
+           ============================================================ */
+        .controls-container {
+            position: absolute; top: 20px; left: 20px; z-index: 30;
+            display: flex; flex-direction: column; gap: 10px;
+            align-items: flex-start;
+            transition: left 0.3s ease;
+        }
+        @media (max-width: 767px) {
+            .controls-container {
+                top: auto; bottom: 0; left: 0; right: 0;
+                flex-direction: row; gap: 0;
+                align-items: stretch;
+                background: #fff;
+                padding: 0;
+                padding-bottom: env(safe-area-inset-bottom, 0px);
+                box-shadow: 0 -1px 0 rgba(0,0,0,0.08), 0 -4px 20px rgba(0, 80, 150, 0.10);
+                /* オーバーレイ(150)・パネル(200)より高く設定してボタンを常にタップ可能にする */
+                z-index: 220;
+                border-top: 1px solid rgba(0,0,0,0.06);
+            }
+            .controls-container > * {
+                flex: 1; min-width: 0;
+            }
+        }
+
+        .ctrl-btn {
+            background: rgba(255,255,255,0.97); border: 1.5px solid rgba(0,150,210,0.18);
+            color: var(--color-text-main);
+            border-radius: 30px; padding: 8px 16px;
+            font-weight: bold; font-size: 13px; cursor: pointer;
+            box-shadow: var(--shadow-soft);
+            display: flex; align-items: center; gap: 6px;
+            transition: all 0.2s; white-space: nowrap;
+            touch-action: manipulation; /* タップ遅延・誤ズーム防止 */
+            -webkit-tap-highlight-color: transparent;
+            user-select: none;
+        }
+        @media (max-width: 767px) {
+            .ctrl-btn {
+                border-radius: 0; padding: 10px 4px 8px;
+                font-size: 10px; box-shadow: none; border: none;
+                justify-content: center; width: 100%;
+                background: transparent;
+                flex-direction: column; gap: 2px;
+                color: var(--color-text-sub);
+                position: relative;
+                transition: color 0.2s;
+                min-height: 54px; /* タップ領域を確保 */
+            }
+            .ctrl-btn i {
+                font-size: 18px;
+                line-height: 1;
+            }
+            .ctrl-btn.primary, .ctrl-btn.layer {
+                box-shadow: none;
+                background: transparent;
+                color: var(--color-text-sub);
+            }
+            .ctrl-btn.tab-active {
+                color: var(--color-primary);
+            }
+            .ctrl-btn.tab-active::after {
+                content: '';
+                position: absolute;
+                top: 0; left: 20%; right: 20%;
+                height: 2.5px;
+                background: var(--color-primary);
+                border-radius: 0 0 2px 2px;
+            }
+        }
+        .ctrl-btn.primary {
+            background: linear-gradient(135deg, #FF7043, #FF5722);
+            border-color: transparent; color: white;
+            box-shadow: var(--shadow-warm);
+        }
+        .ctrl-btn.layer {
+            background: linear-gradient(135deg, #00E5FF, #00BCD4);
+            border-color: transparent; color: white;
+            box-shadow: 0 4px 16px rgba(0,188,212,0.35);
+        }
+        .ctrl-btn:active { transform: scale(0.95); }
+
+        /* ホームタブ: PC では非表示 */
+        .bottom-tab-home { display: none; }
+        @media (max-width: 767px) {
+            .bottom-tab-home { display: flex; }
+        }
+
+        /* ドロップダウンパネル共通 */
+        .ctrl-panel-wrapper { position: relative; }
+        .ctrl-panel {
+            background: var(--bg-glass); border-radius: 16px; padding: 14px 15px;
+            box-shadow: var(--shadow-soft); backdrop-filter: blur(10px);
+            display: flex; flex-direction: column; gap: 8px;
+            min-width: 190px;
+            position: absolute; top: calc(100% + 8px); left: 0;
+            transform-origin: top left;
+            transition: opacity 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+                        transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+            opacity: 0; transform: scale(0.9) translateY(-4px);
+            pointer-events: none; z-index: 100;
+        }
+        .ctrl-panel.open {
+            opacity: 1; transform: scale(1) translateY(0);
+            pointer-events: auto;
+        }
+        @media (max-width: 767px) {
+            .ctrl-panel {
+                position: fixed; top: auto; left: 4% !important; right: 4%;
+                /* ボトムナビ(約54px + safe-area)の上に出す */
+                bottom: calc(58px + env(safe-area-inset-bottom, 0px));
+                width: 92%; max-width: 360px; margin: 0 auto;
+                border-radius: 18px 18px 14px 14px;
+                transform-origin: bottom center;
+                transform: translateY(12px);
+                max-height: calc(55vh - 54px);
+                overflow-y: auto;
+                -webkit-overflow-scrolling: touch;
+                /* モバイルではbackdrop-filterを外してレンダリング負荷を下げる */
+                backdrop-filter: none;
+                background: rgba(255,255,255,0.99);
+                box-shadow: 0 -2px 20px rgba(0,80,150,0.15), 0 8px 32px rgba(0,0,0,0.12);
+                z-index: 200;
+                will-change: transform, opacity;
+            }
+            .ctrl-panel.open {
+                transform: translateY(0);
+            }
+        }
+        .ctrl-panel-title {
+            font-size: 10px; font-weight: bold;
+            color: var(--color-text-sub); text-transform: uppercase;
+            letter-spacing: 1px; margin-bottom: 4px;
+        }
+
+        /* カテゴリフィルター */
+        .filter-item {
+            display: flex; align-items: center; gap: 8px;
+            cursor: pointer; font-size: 14px;
+            color: var(--color-text-main);
+            padding: 8px 2px; /* タップ領域を拡大 */
+            touch-action: manipulation;
+            -webkit-tap-highlight-color: transparent;
+            user-select: none;
+        }
+        .filter-item input { display: none; }
+        .checkmark {
+            width: 20px; height: 20px; flex-shrink: 0;
+            border: 2px solid #ccc; border-radius: 6px;
+            display: flex; align-items: center; justify-content: center;
+            transition: all 0.2s;
+        }
+        .filter-item input:checked + .checkmark {
+            background: var(--color-primary);
+            border-color: var(--color-primary);
+        }
+        .checkmark::after { content: '✔'; color: white; font-size: 12px; display: none; }
+        .filter-item input:checked + .checkmark::after { display: block; }
+        /* カテゴリアイコン */
+        .cat-icon {
+            width: 22px; height: 22px; flex-shrink: 0; border-radius: 50%;
+            background: var(--color-secondary); color: var(--color-primary);
+            display: flex; align-items: center; justify-content: center;
+            font-size: 11px;
+        }
+
+        /* レイヤートグル */
+        .layer-item {
+            display: flex; align-items: center; gap: 10px;
+            font-size: 14px; color: var(--color-text-main);
+            padding: 8px 2px; /* タップ領域を拡大 */
+            touch-action: manipulation;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .layer-icon {
+            width: 26px; height: 26px; border-radius: 50%; flex-shrink: 0;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 13px;
+        }
+        .layer-label { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .toggle-switch {
+            position: relative; width: 38px; height: 22px; flex-shrink: 0;
+            touch-action: manipulation; cursor: pointer;
+        }
+        .toggle-switch input { opacity: 0; width: 0; height: 0; position: absolute; }
+        .toggle-track {
+            position: absolute; inset: 0; background: #ccc;
+            border-radius: 22px; cursor: pointer;
+            transition: background 0.2s;
+        }
+        .toggle-switch input:checked + .toggle-track { background: var(--color-primary); }
+        .toggle-track::after {
+            content: ''; position: absolute;
+            width: 16px; height: 16px; border-radius: 50%;
+            background: white; top: 3px; left: 3px;
+            transition: transform 0.2s;
+        }
+        .toggle-switch input:checked + .toggle-track::after { transform: translateX(16px); }
+
+        /* ============================================================
+           NEWS TICKER
+           ============================================================ */
+        .news-ticker-wrapper {
+            position: absolute; top: 20px; z-index: 25;
+            pointer-events: none; height: 45px;
+            display: flex; justify-content: center;
+            transition: all 0.3s ease;
+            width: 100%; left: 0;
+        }
+        .news-ticker {
+            background: rgba(255, 255, 255, 0.98); border-radius: 25px;
+            box-shadow: var(--shadow-soft); padding: 0 10px 0 15px;
+            display: flex; align-items: center; gap: 10px;
+            width: 90%; max-width: 450px; height: 100%;
+            pointer-events: auto; animation: slideDown 0.5s ease-out;
+        }
+        @keyframes slideDown { from { transform: translateY(-100px); } to { transform: translateY(0); } }
+        @media (max-width: 767px) {
+            .news-ticker-wrapper {
+                top: 10px; height: 38px;
+            }
+            .news-ticker {
+                width: 94%; max-width: none; padding: 0 8px 0 12px; gap: 6px;
+                border-radius: 20px; font-size: 12px;
+            }
+            .news-icon-area { font-size: 14px; }
+            .news-text { font-size: 12px; }
+            .news-spot-name { font-size: 9px; }
+            .news-counter { font-size: 10px; }
+            .news-list-btn { width: 28px; height: 28px; }
+        }
+
+        .news-icon-area { color: var(--color-accent); font-size: 18px; animation: pulse 2s infinite; flex-shrink: 0; }
+        @keyframes pulse { 50% { opacity: 0.5; } }
+
+        .news-content-area { flex: 1; overflow: hidden; cursor: pointer; }
+        .news-text { font-size: 13px; font-weight: bold; color: var(--color-text-main); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .news-spot-name { font-size: 10px; color: var(--color-text-sub); }
+
+        .news-controls { display: flex; align-items: center; gap: 8px; flex-shrink: 0; white-space: nowrap; }
+        .news-counter { font-size: 12px; color: var(--color-text-sub); font-family: monospace; }
+        .news-list-btn {
+            background: #f5f5f5; border: none; width: 32px; height: 32px;
+            border-radius: 50%; display: flex; align-items: center;
+            justify-content: center; color: #555; cursor: pointer; transition: background 0.2s;
+        }
+        .news-list-btn:hover { background: #eee; }
+
+        /* ============================================================
+           MARKERS
+           ============================================================ */
+        .custom-marker {
+            width: 60px; height: 60px; cursor: pointer; z-index: 10;
+        }
+        @media (max-width: 767px) {
+            .custom-marker { width: 44px; height: 44px; }
+            .marker-emoji { font-size: 20px !important; }
+        }
+        .custom-marker.active { z-index: 100; }
+        .marker-inner {
+            width: 100%; height: 100%; background: #fff; border-radius: 50%;
+            border: 3px solid var(--color-primary);
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+            position: relative; overflow: visible;
+            display: flex; justify-content: center; align-items: center;
+            transform-origin: center bottom;
+            transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1),
+                        border-color 0.2s, box-shadow 0.2s, border-width 0.2s;
+        }
+        .custom-marker.active .marker-inner {
+            transform: scale(1.55);
+            border-color: var(--color-accent);
+            border-width: 4px;
+            box-shadow: 0 0 0 4px rgba(255, 92, 56, 0.25), 0 6px 20px rgba(0, 0, 0, 0.4);
+            animation: marker-pop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+        }
+        @keyframes marker-pop {
+            0%   { transform: scale(1); }
+            60%  { transform: scale(1.65); }
+            100% { transform: scale(1.55); }
+        }
+        /* アクティブ時のリングエフェクト */
+        .custom-marker.active .marker-inner::before {
+            content: '';
+            position: absolute; inset: -6px;
+            border-radius: 50%;
+            border: 3px solid var(--color-primary);
+            animation: ring-pulse 1.4s ease-out infinite;
+            z-index: -1;
+        }
+        @keyframes ring-pulse {
+            0%   { opacity: 0.9; transform: scale(1); }
+            100% { opacity: 0;   transform: scale(1.7); }
+        }
+        /* overflow: hidden は画像クリッピング用に内側の別要素で対応 */
+        .marker-clip {
+            position: absolute; inset: 0; border-radius: 50%; overflow: hidden;
+        }
+        .floating { animation: float-safe 3s infinite ease-in-out; }
+        @keyframes float-safe { 0%, 100% { margin-top: 0; } 50% { margin-top: -8px; } }
+        .marker-image { width: 100%; height: 100%; object-fit: cover; position: absolute; top: 0; left: 0; z-index: 2; }
+        .marker-emoji { font-size: 28px; z-index: 1; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); }
+        .status-badge { position: absolute; bottom: 0; right: 0; width: 14px; height: 14px; border-radius: 50%; border: 2px solid white; z-index: 5; display: none; }
+        .marker-news-badge {
+            position: absolute; top: 0; right: 0; width: 18px; height: 18px;
+            background: var(--color-accent); border-radius: 50%;
+            color: white; display: flex; justify-content: center;
+            align-items: center; font-size: 10px; z-index: 6; border: 2px solid white;
+        }
+
+        /* GPS 現在地 */
+        .my-location-marker {
+            width: 44px; height: 44px;
+            display: flex; justify-content: center; align-items: flex-end;
+            pointer-events: none;
+        }
+        .my-location-marker i {
+            color: #FF5252; font-size: 38px; line-height: 1;
+            filter: drop-shadow(0 2px 5px rgba(255,255,255,0.85));
+        }
+
+        /* 神輿ルート — HTMLマーカー（画面上で縦を保つピン形状＋進行ベアリングは地図基準で維持） */
+        .mikoshi-marker {
+            position: relative;
+            width: 72px;
+            min-height: 96px;
+            height: auto;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-end;
+            --stem-color: #0288d1;
+        }
+        .mikoshi-marker-shadow {
+            position: absolute;
+            bottom: 2px;
+            left: 50%;
+            width: 42px;
+            height: 12px;
+            margin-left: -21px;
+            background: radial-gradient(ellipse at center, rgba(0, 40, 80, 0.45) 0%, rgba(0, 40, 80, 0.08) 70%, transparent 100%);
+            border-radius: 50%;
+            filter: blur(3px);
+            transform-origin: center center;
+            animation: mikoshi-shadow-breathe 2.6s ease-in-out infinite;
+            z-index: 0;
+        }
+        .mikoshi-marker-body {
+            position: relative;
+            z-index: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            transform-origin: center bottom;
+            /* 視点ピッチに合わせた倒れ込み rotateX は使わず、画面上の縦立ちとの兼ね合いを優先 */
+            animation: mikoshi-float-pin 2.8s ease-in-out infinite;
+        }
+        .mikoshi-marker-head {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            position: relative;
+            z-index: 2;
+        }
+        .mikoshi-marker-stem {
+            width: 0;
+            height: 0;
+            margin-top: -6px;
+            border-left: 10px solid transparent;
+            border-right: 10px solid transparent;
+            border-top: 15px solid var(--stem-color);
+            filter: drop-shadow(0 2px 5px rgba(0, 0, 0, 0.3));
+            pointer-events: none;
+            flex-shrink: 0;
+        }
+        .mikoshi-marker-img {
+            width: 58px;
+            height: auto;
+            display: block;
+            filter: drop-shadow(0 6px 10px rgba(0, 60, 100, 0.35));
+        }
+        @keyframes mikoshi-float-pin {
+            0%, 100% { transform: translateY(0); }
+            50%      { transform: translateY(-10px); }
+        }
+        @keyframes mikoshi-shadow-breathe {
+            0%, 100% { transform: scaleX(1) scaleY(1); opacity: 0.85; }
+            50% { transform: scaleX(0.75) scaleY(0.85); opacity: 0.55; }
+        }
+        @media (max-width: 767px) {
+            .mikoshi-marker {
+                width: 56px;
+                min-height: 82px;
+            }
+            .mikoshi-marker-img {
+                width: 46px;
+            }
+            .mikoshi-marker-stem {
+                margin-top: -5px;
+                border-left-width: 8px;
+                border-right-width: 8px;
+                border-top-width: 12px;
+            }
+        }
+
+        /* ============================================================
+           MAP CONTROLS (右下)
+           ============================================================ */
+        .map-controls {
+            position: absolute; bottom: 30px; right: 20px; z-index: 35;
+            display: flex; flex-direction: column; gap: 12px;
+            pointer-events: auto; transition: all 0.3s ease;
+        }
+        .btn-control {
+            width: 48px; height: 48px; border-radius: 50%; border: none;
+            color: white; font-size: 20px; cursor: pointer;
+            box-shadow: var(--shadow-soft);
+            display: flex; justify-content: center; align-items: center;
+            transition: transform 0.1s;
+            touch-action: manipulation;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .btn-control:active { transform: scale(0.9); }
+        .btn-gps   { background: linear-gradient(135deg, #FFAB91, #FF5722); }
+        .btn-reset { background: linear-gradient(135deg, #80DEEA, #00ACC1); }
+
+        /* ============================================================
+           CARD PANEL
+           ============================================================ */
+        .card-panel-container { position: fixed; z-index: 40; transition: all 0.3s ease; pointer-events: none; }
+        .card-panel-mobile-inner {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            min-height: 0;
+        }
+        .card-panel-handle {
+            display: none;
+            flex-shrink: 0;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            gap: 3px;
+            width: 100%;
+            padding: 8px 12px 6px;
+            margin: 0;
+            border: none;
+            cursor: pointer;
+            background: transparent;
+            color: #888;
+            -webkit-tap-highlight-color: transparent;
+            touch-action: manipulation;
+        }
+        .card-panel-handle:focus-visible {
+            outline: 2px solid var(--color-primary);
+            outline-offset: 2px;
+        }
+        .card-panel-handle-pill {
+            width: 40px;
+            height: 4px;
+            border-radius: 4px;
+            background: rgba(0, 0, 0, 0.18);
+        }
+        .card-panel-handle > i {
+            font-size: 12px;
+            line-height: 1;
+            transition: transform 0.3s ease;
+        }
+        body.cards-sheet-collapsed .card-panel-handle > i {
+            transform: rotate(180deg);
+        }
+        .scroll-wrapper {
+            display: flex; gap: 15px; pointer-events: auto;
+            -webkit-overflow-scrolling: touch; scrollbar-width: none;
+        }
+        .scroll-wrapper::-webkit-scrollbar { display: none; }
+
+        /* --- スマホレイアウト --- */
+        .card-panel-container {
+            bottom: 0; left: 0; width: 100%;
+            background: linear-gradient(to top, rgba(255,255,255,0.92) 0%, rgba(255,255,255,0) 100%);
+            padding-bottom: 20px;
+        }
+        .scroll-wrapper {
+            overflow-x: auto; scroll-snap-type: x mandatory;
+            padding: 10px 20px 22px; align-items: stretch;
+        }
+        .slide-card {
+            flex: 0 0 268px; min-height: 0; height: auto; background: white; border-radius: 20px;
+            box-shadow: var(--shadow-soft); display: flex; flex-direction: column;
+            overflow: hidden; scroll-snap-align: center;
+            transition: all 0.3s; cursor: pointer;
+            border: 2px solid transparent; position: relative;
+        }
+        @media (max-width: 767px) {
+            .card-panel-container {
+                /* ボトムナビ(約54px + safe-area)の上に配置 */
+                bottom: calc(54px + env(safe-area-inset-bottom, 0px));
+                padding-bottom: 0;
+                background: none;
+                pointer-events: none;
+            }
+            .card-panel-mobile-inner {
+                pointer-events: auto;
+                max-height: min(52vh, 380px);
+                transition: max-height 0.38s cubic-bezier(0.4, 0, 0.2, 1);
+                overflow: hidden;
+                background: linear-gradient(to bottom, rgba(255, 255, 255, 0.98) 0%, rgba(255, 255, 255, 0.94) 100%);
+                border-radius: 14px 14px 0 0;
+                box-shadow: 0 -8px 28px rgba(0, 0, 0, 0.12);
+            }
+            body.cards-sheet-collapsed .card-panel-mobile-inner {
+                max-height: 42px;
+            }
+            .card-panel-handle {
+                display: flex;
+            }
+            .scroll-wrapper {
+                flex: 1 1 auto;
+                min-height: 0;
+                padding: 4px 14px 18px;
+                gap: 12px;
+                touch-action: pan-x; /* 横スクロールのみ、縦はマップへ */
+                transition: opacity 0.22s ease, padding 0.25s ease;
+            }
+            body.cards-sheet-collapsed .scroll-wrapper {
+                flex: 0 0 0;
+                min-height: 0 !important;
+                max-height: 0 !important;
+                opacity: 0;
+                padding-top: 0 !important;
+                padding-bottom: 0 !important;
+                overflow: hidden !important;
+                pointer-events: none;
+            }
+            .slide-card {
+                flex: 0 0 208px; min-height: 0; height: auto; border-radius: 14px;
+                touch-action: manipulation;
+            }
+            .card-image-area { height: 96px !important; min-height: 76px; flex-shrink: 0; }
+            .card-info {
+                padding: 8px 10px 12px 9px !important;
+                flex: 0 0 auto !important;
+                min-height: 0;
+                align-items: flex-end !important;
+                gap: 6px !important;
+            }
+            .card-info-main {
+                padding-right: 2px !important;
+            }
+            .card-title { font-size: 12px !important; margin-bottom: 3px !important; }
+            .card-detail-block { margin-top: 2px !important; gap: 1px !important; }
+            .card-detail-line { font-size: 9px !important; }
+            .card-status--compact { font-size: 8px !important; padding: 1px 4px !important; }
+            .card-image-indicators { padding: 4px 6px !important; gap: 4px !important; }
+            .card-ind { min-width: 18px !important; height: 18px !important; font-size: 9px !important; }
+            .card-ind--status { width: 9px !important; height: 9px !important; min-width: 9px !important; }
+            .live-badge--card-top { font-size: 6px !important; padding: 0 4px !important; }
+            .card-arrow {
+                width: 22px !important;
+                height: 22px !important;
+                font-size: 11px !important;
+                position: static !important;
+                flex-shrink: 0 !important;
+                align-self: flex-end !important;
+                margin: 0 0 1px 0 !important;
+                box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12) !important;
+            }
+            .card-live-post--compact { margin-top: 2px !important; padding: 3px 5px !important; }
+            .tag-chips { margin-top: 6px !important; gap: 4px !important; padding-bottom: 0 !important; }
+            .tag-chip { font-size: 9px !important; padding: 2px 5px !important; }
+            /* マップコントロールはカードパネルの右に配置。ボトムナビと被らないよう上げる */
+            .map-controls { bottom: auto; top: 60px; right: 12px; }
+            .btn-control { width: 44px; height: 44px; font-size: 17px; }
+        }
+
+        /* --- PC レイアウト --- */
+        @media (min-width: 768px) {
+            #map { width: calc(100% - var(--sidebar-width)); transition: width 0.3s ease; }
+            .news-ticker-wrapper { width: calc(100% - var(--sidebar-width)); left: var(--sidebar-width); transition: width 0.3s ease, left 0.3s ease; }
+            .controls-container { left: calc(var(--sidebar-width) + 20px); transition: left 0.3s ease; }
+            .card-panel-container {
+                top: 0; left: 0; bottom: 0; width: var(--sidebar-width);
+                background: white; box-shadow: 2px 0 15px rgba(0,0,0,0.1);
+                padding: 0; border-right: 1px solid #eee; pointer-events: auto;
+                transition: transform 0.3s ease;
+            }
+            .card-panel-mobile-inner {
+                height: 100%;
+                max-height: none;
+                border-radius: 0;
+                box-shadow: none;
+                background: transparent;
+                overflow: visible;
+            }
+            .card-panel-handle { display: none !important; }
+            .scroll-wrapper {
+                height: 100%; overflow-y: auto; flex-direction: column;
+                padding: 20px; gap: 20px; align-items: stretch;
+                scroll-snap-type: y mandatory;
+            }
+            .slide-card {
+                flex: 0 0 auto; min-height: 0; height: auto; width: 100%;
+                scroll-snap-align: start; box-shadow: 0 5px 15px rgba(0,0,0,0.08);
+            }
+            .slide-card.active { transform: scale(1.02); border-color: var(--color-primary); box-shadow: var(--shadow-soft); }
+            .card-image-area { height: 156px !important; min-height: 120px; flex-shrink: 0; }
+            .card-emoji-placeholder { font-size: 60px !important; }
+            .card-info {
+                padding: 14px 12px 18px 15px !important;
+                align-items: flex-end !important;
+                gap: 10px !important;
+            }
+            .card-info-main { padding-right: 4px !important; }
+            .card-title { font-size: 16px !important; margin-bottom: 8px !important; }
+            .card-detail-block { margin-top: 4px !important; gap: 3px !important; }
+            .card-detail-line { font-size: 11px !important; }
+            .card-status--compact { font-size: 11px !important; padding: 3px 8px !important; }
+            .card-image-indicators { padding: 6px 8px !important; gap: 6px !important; }
+            .card-ind { min-width: 22px !important; height: 21px !important; font-size: 11px !important; }
+            .card-ind--status { width: 12px !important; height: 12px !important; min-width: 12px !important; }
+            .live-badge--card-top { font-size: 8px !important; padding: 2px 7px !important; }
+            .card-arrow {
+                width: 32px !important;
+                height: 32px !important;
+                font-size: 14px !important;
+                position: static !important;
+                flex-shrink: 0 !important;
+                align-self: flex-end !important;
+                margin: 0 0 2px 0 !important;
+            }
+            .card-live-post--compact { margin-top: 5px !important; padding: 5px 8px !important; }
+            .tag-chips { margin-top: 6px !important; gap: 4px !important; padding-bottom: 6px !important; }
+            .tag-chip { font-size: 10px !important; padding: 3px 8px !important; }
+            .map-controls { bottom: 30px; }
+        }
+
+        /* カード内容 */
+        .slide-card.active { border-color: var(--color-primary); }
+        .card-image-area {
+            width: 100%; flex-shrink: 0;
+            height: 124px;
+            min-height: 100px;
+            position: relative; overflow: hidden; background: #f7f7f7;
+        }
+        .card-thumb { width: 100%; height: 100%; object-fit: cover; }
+        .card-emoji-placeholder { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 48px; background: var(--color-secondary); }
+        /* 画像上：各フィールドの有無のみ（テキスト本文は出さない） */
+        .card-image-indicators {
+            position: absolute; left: 0; right: 0; bottom: 0;
+            display: flex; flex-wrap: wrap; align-items: center; gap: 5px;
+            padding: 5px 7px;
+            background: linear-gradient(to top, rgba(0,0,0,0.58) 0%, rgba(0,0,0,0.12) 55%, transparent 100%);
+            pointer-events: none;
+        }
+        .card-ind {
+            display: inline-flex; align-items: center; justify-content: center;
+            min-width: 20px; height: 19px; padding: 0 5px;
+            border-radius: 6px; background: rgba(255,255,255,0.94);
+            font-size: 10px; color: #444;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+            flex-shrink: 0;
+        }
+        .card-ind--status {
+            width: 11px; height: 11px; min-width: 11px; padding: 0;
+            border-radius: 50%;
+            border: 2px solid rgba(255,255,255,0.95);
+        }
+        .card-ind--news { color: var(--color-accent); }
+        .card-ind--hours { color: var(--color-primary); }
+        .live-badge--card-top {
+            font-size: 7px; font-weight: bold; letter-spacing: 0.3px;
+            padding: 2px 6px; border-radius: 3px;
+            animation: none;
+        }
+        .card-info {
+            flex: 0 0 auto;
+            min-height: 0;
+            padding: 11px 11px 14px 13px;
+            display: flex;
+            flex-direction: row;
+            align-items: flex-end;
+            justify-content: flex-start;
+            gap: 8px;
+            position: relative;
+            z-index: 0;
+        }
+        .card-info-main {
+            flex: 1 1 auto;
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-start;
+        }
+        .card-hours-line { pointer-events: none; }
+        .card-title { font-size: 14px; font-weight: bold; color: var(--color-text-main); margin-bottom: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .card-detail-block {
+            display: flex; flex-direction: column; gap: 2px;
+            margin-top: 3px; max-width: 100%; min-width: 0;
+        }
+        .card-detail-line {
+            font-size: 10px; color: var(--color-text-sub);
+            line-height: 1.2;
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
+        .card-detail-news-text { color: #555; }
+        .card-status--compact {
+            font-size: 9px; font-weight: bold; letter-spacing: 0.3px;
+            padding: 2px 6px; border-radius: 4px;
+            display: inline-block; max-width: 100%;
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle;
+        }
+        .card-meta-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+        .card-status { font-size: 11px; padding: 4px 10px; border-radius: 6px; font-weight: bold; letter-spacing: 0.5px; pointer-events: none; }
+        .flash-news-tag {
+            font-size: 11px; color: white; background: var(--color-accent); padding: 4px 10px; border-radius: 6px;
+            font-weight: bold; display: inline-flex; align-items: center; gap: 4px;
+            pointer-events: none;
+        }
+        .flash-news-tag * { pointer-events: none; }
+        .card-arrow {
+            position: static;
+            flex-shrink: 0;
+            align-self: flex-end;
+            margin: 0 0 2px 0;
+            width: 26px;
+            height: 26px;
+            border-radius: 50%;
+            background: #f5f5f5;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #666;
+            font-size: 12px;
+            transition: all 0.2s;
+            z-index: 10;
+            cursor: pointer;
+            pointer-events: auto;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+        }
+        .slide-card.active .card-arrow { background: var(--color-primary); color: white; }
+
+        /* タグチップ */
+        .tag-chips {
+            display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px;
+            flex-shrink: 0; padding-bottom: 4px;
+        }
+        .tag-chip {
+            font-size: 10px; padding: 3px 8px; border-radius: 20px;
+            background: #E0F7FF; color: #0077B6; font-weight: bold;
+            white-space: nowrap; cursor: pointer; border: 1px solid #B3E5FC;
+            transition: all 0.15s;
+        }
+        .tag-chip:hover, .tag-chip.active { background: var(--color-primary); color: white; border-color: var(--color-primary); }
+
+        /* タグフィルターチップ（フィルターパネル内） */
+        .tag-filter-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+        .tag-filter-chip {
+            font-size: 12px; padding: 5px 12px; border-radius: 20px;
+            background: #f0f0f0; color: var(--color-text-main);
+            border: 1.5px solid #ddd; cursor: pointer; font-weight: bold;
+            transition: all 0.2s;
+        }
+        .tag-filter-chip.active { background: var(--color-primary); color: white; border-color: var(--color-primary); }
+
+        /* ============================================================
+           IMAGE SLIDER (詳細モーダル内)
+           ============================================================ */
+        .modal-slider {
+            position: relative; width: 100%; height: 240px;
+            overflow: hidden; background: #111;
+            border-radius: 20px 20px 0 0;
+        }
+        .modal-slider-empty {
+            width: 100%; height: 100%;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 70px; background: var(--color-secondary);
+        }
+        .modal-slider-track {
+            display: flex; height: 100%;
+            transition: transform 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+            will-change: transform;
+        }
+        .modal-slide-img {
+            flex: 0 0 100%; width: 100%; height: 100%;
+            object-fit: cover; display: block;
+        }
+        .slider-nav {
+            position: absolute; top: 50%; transform: translateY(-50%);
+            background: rgba(255,255,255,0.92); border: none; border-radius: 50%;
+            width: 34px; height: 34px; cursor: pointer; z-index: 5;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 13px; color: #333;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.25); transition: background 0.2s;
+        }
+        .slider-nav:hover { background: white; }
+        .slider-nav.hidden { display: none; }
+        .slider-prev { left: 10px; }
+        .slider-next { right: 10px; }
+        .slider-dots {
+            position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%);
+            display: flex; gap: 6px; pointer-events: auto;
+        }
+        .slider-dot {
+            width: 6px; height: 6px; border-radius: 50%;
+            background: rgba(255,255,255,0.55); cursor: pointer;
+            transition: all 0.25s; border: none;
+        }
+        .slider-dot.active { background: white; width: 18px; border-radius: 3px; }
+
+        /* ============================================================
+           MODALS
+           ============================================================ */
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.6); z-index: 2100;
+            display: none; justify-content: center; align-items: center;
+            backdrop-filter: blur(3px);
+            -webkit-backdrop-filter: blur(3px);
+            touch-action: none; /* モーダル外の誤スクロール防止 */
+        }
+        .modal-overlay.open { display: flex; }
+
+        /* ニュース一覧モーダル */
+        .news-list-card {
+            background: white; width: 90%; max-width: 450px; max-height: 80vh;
+            border-radius: 20px; display: flex; flex-direction: column;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.3); animation: popIn 0.3s ease-out;
+        }
+        .news-list-header {
+            background: var(--color-accent); color: white; padding: 15px 20px;
+            font-weight: bold; display: flex; justify-content: space-between;
+            align-items: center; border-radius: 20px 20px 0 0; flex-shrink: 0;
+        }
+        .news-list-body { overflow-y: auto; flex: 1; }
+        .news-list-close {
+            background: rgba(0,0,0,0.1); color: white; border: none; border-radius: 50%;
+            width: 32px; height: 32px; cursor: pointer; font-size: 16px;
+            display: flex; align-items: center; justify-content: center; transition: background 0.2s;
+        }
+        .news-list-close:hover { background: rgba(0,0,0,0.2); }
+        .news-item { padding: 15px 20px; border-bottom: 1px solid #f0f0f0; cursor: pointer; display: flex; align-items: flex-start; gap: 12px; transition: background 0.2s; }
+        .news-item:hover { background: #f9f9f9; }
+        .news-item:last-child { border-bottom: none; }
+        .news-item-icon { color: var(--color-accent); margin-top: 2px; font-size: 16px; }
+
+        /* 詳細モーダル */
+        .modal-content {
+            background: white; width: 90%; max-width: 500px; max-height: 85vh;
+            border-radius: 20px; overflow-y: auto; display: flex; flex-direction: column;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.3); animation: popIn 0.3s;
+            -webkit-overflow-scrolling: touch;
+            touch-action: pan-y;
+        }
+        @media (max-width: 767px) {
+            .modal-content {
+                width: 96%; max-height: 90vh; border-radius: 16px;
+            }
+            .modal-slider { height: 200px; border-radius: 16px 16px 0 0; }
+            .modal-body { padding: 18px; }
+            .modal-title { font-size: 20px; }
+        }
+        @keyframes popIn { from { transform: scale(0.95); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+        .modal-header { position: relative; }
+        .modal-close-btn {
+            position: absolute; top: 15px; right: 15px; background: rgba(0,0,0,0.5);
+            color: white; border: none; border-radius: 50%; width: 36px; height: 36px;
+            font-size: 20px; cursor: pointer; display: flex; align-items: center; justify-content: center;
+        }
+        .modal-body { padding: 25px; }
+        .modal-title { font-size: 24px; font-weight: bold; margin: 10px 0; color: #333; }
+        .modal-hours { font-size: 13px; color: var(--color-text-sub); margin: 6px 0 10px; display: flex; align-items: center; gap: 6px; }
+        .modal-hours i { color: var(--color-primary); }
+        .modal-tags { display: flex; flex-wrap: wrap; gap: 5px; margin: 8px 0 14px; }
+        .modal-contact { font-size: 14px; line-height: 1.7; color: #555; margin: 12px 0 16px; padding: 12px 14px; background: #f5f9f8; border-radius: 12px; border-left: 4px solid var(--color-primary); }
+        .modal-contact-line { margin: 6px 0; display: flex; align-items: flex-start; gap: 8px; }
+        .modal-contact-line i { color: var(--color-primary); margin-top: 3px; flex-shrink: 0; }
+        .modal-contact-line a { color: var(--color-nav); text-decoration: none; word-break: break-all; }
+        .modal-contact-line a:hover { text-decoration: underline; }
+        .modal-text { font-size: 15px; line-height: 1.8; color: #555; white-space: pre-wrap; margin-bottom: 20px; }
+        .btn-nav-large {
+            display: block; width: 100%; background: white; border: 2px solid var(--color-nav);
+            color: var(--color-nav); padding: 12px; border-radius: 12px; margin-bottom: 12px;
+            font-weight: bold; font-size: 15px; cursor: pointer; text-align: center;
+            text-decoration: none; transition: all 0.2s;
+        }
+        .btn-nav-large:hover { background: var(--color-nav); color: white; }
+        .btn-coupon-large {
+            display: block; width: 100%; background: linear-gradient(135deg, #FF9800, #F57C00);
+            color: white; border: none; padding: 12px; border-radius: 12px;
+            font-weight: bold; font-size: 16px; cursor: pointer; text-align: center;
+        }
+
+        /* クーポンモーダル */
+        .coupon-card {
+            background: #FFF8E1; border: 3px dashed #FF9800; padding: 30px;
+            border-radius: 20px; width: 80%; max-width: 350px; text-align: center;
+        }
+        .coupon-text { font-size: 24px; font-weight: bold; margin: 20px 0; color: #E65100; }
+        .coupon-close { background: #333; color: white; padding: 10px 30px; border-radius: 30px; font-weight: bold; border: none; cursor: pointer; }
+
+        /* ============================================================
+           SIDEBAR TOGGLE BUTTON (PC only)
+           ============================================================ */
+        .sidebar-toggle-btn {
+            display: none;
+        }
+        @media (min-width: 768px) {
+            .sidebar-toggle-btn {
+                display: flex;
+                position: fixed;
+                top: 50%;
+                left: var(--sidebar-width);
+                transform: translateY(-50%);
+                width: 18px;
+                height: 60px;
+                background: white;
+                border: 1px solid #eee;
+                border-left: none;
+                border-radius: 0 10px 10px 0;
+                box-shadow: 3px 0 10px rgba(0,0,0,0.1);
+                cursor: pointer;
+                align-items: center;
+                justify-content: center;
+                color: var(--color-text-sub);
+                font-size: 11px;
+                z-index: 50;
+                transition: left 0.3s ease, background 0.2s, color 0.2s;
+                padding: 0;
+            }
+            .sidebar-toggle-btn:hover {
+                background: var(--color-secondary);
+                color: var(--color-primary);
+            }
+            .sidebar-toggle-btn i {
+                transition: transform 0.3s ease;
+            }
+            /* 折りたたみ時 */
+            body.sidebar-collapsed .card-panel-container {
+                transform: translateX(calc(-1 * var(--sidebar-width)));
+            }
+            body.sidebar-collapsed #map {
+                width: 100%;
+            }
+            body.sidebar-collapsed .news-ticker-wrapper {
+                width: 100%;
+                left: 0;
+            }
+            body.sidebar-collapsed .controls-container {
+                left: 20px;
+            }
+            body.sidebar-collapsed .sidebar-toggle-btn {
+                left: 0;
+            }
+            body.sidebar-collapsed .sidebar-toggle-btn i {
+                transform: rotate(180deg);
+            }
+        }
+
+        /* ============================================================
+           MOBILE PANEL OVERLAY (パネル外タップで閉じる)
+           ============================================================ */
+        .ctrl-panel-overlay {
+            display: none; position: fixed;
+            top: 0; left: 0; right: 0;
+            /* ボトムナビの手前で止めることで、ナビバーは常にタップ可能 */
+            bottom: calc(54px + env(safe-area-inset-bottom, 0px));
+            background: rgba(0,0,0,0.3); z-index: 150;
+            touch-action: manipulation;
+        }
+        .ctrl-panel-overlay.open { display: block; }
+        @media (min-width: 768px) {
+            .ctrl-panel-overlay { display: none !important; }
+        }
+
+        /* ============================================================
+           DATA REFRESH INDICATOR
+           ============================================================ */
+        #refresh-indicator {
+            position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%);
+            background: var(--bg-glass); border-radius: 20px; padding: 6px 14px;
+            font-size: 11px; color: var(--color-text-sub); z-index: 25;
+            box-shadow: var(--shadow-soft); pointer-events: none;
+            opacity: 0; transition: opacity 0.4s;
+        }
+        #refresh-indicator.show { opacity: 1; }
+        @media (max-width: 767px) {
+            #refresh-indicator {
+                bottom: calc(54px + env(safe-area-inset-bottom, 0px) + 74px);
+            }
+        }
+
+        /* ============================================================
+           NEWS TICKER — LIVE拡張
+           ============================================================ */
+        /* LIVE投稿があるとき ticker を少し広げてサムネを出す */
+        .news-ticker.live-mode {
+            gap: 8px;
+            padding-right: 10px;
+        }
+        .ticker-live-thumb {
+            width: 36px; height: 36px; border-radius: 8px;
+            object-fit: cover; flex-shrink: 0;
+            border: 2px solid #FF3B6B;
+            cursor: pointer;
+        }
+        @media (max-width: 767px) {
+            .ticker-live-thumb { width: 30px; height: 30px; }
+        }
+        .ticker-live-dot {
+            width: 8px; height: 8px; border-radius: 50%;
+            background: #FF3B6B; flex-shrink: 0;
+            animation: live-pulse 1.5s ease-in-out infinite;
+        }
+        /* ニュース一覧モーダル — LIVE行 */
+        .news-item-live-thumb {
+            width: 48px; height: 48px; border-radius: 8px;
+            object-fit: cover; flex-shrink: 0;
+            border: 2px solid #FF3B6B; cursor: pointer;
+        }
+        .news-item-type-live { color: #FF3B6B; }
+        .news-item-time { font-size: 11px; color: #aaa; margin-top: 2px; }
+
+        /* ============================================================
+           LIVE POST (LINEリアルタイム投稿)
+           ============================================================ */
+        .live-badge {
+            display: inline-flex; align-items: center; gap: 3px;
+            background: #2196F3; color: white;
+            font-size: 9px; font-weight: bold; letter-spacing: 0.5px;
+            padding: 2px 7px; border-radius: 4px;
+            animation: live-pulse 1.5s ease-in-out infinite;
+        }
+        @keyframes live-pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.65; }
+        }
+        .marker-live-badge {
+            position: absolute; bottom: -6px; left: 50%; transform: translateX(-50%);
+            background: #2196F3; color: white;
+            font-size: 8px; font-weight: bold;
+            padding: 1px 6px; border-radius: 3px;
+            white-space: nowrap; z-index: 12;
+            border: 1.5px solid white;
+            animation: live-pulse 1.5s ease-in-out infinite;
+            max-width: 62px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        /* LIVE マーカー: 頭＋下向き三角形で「ピン」のように立体感を出す（APNG も頭部に載せられる） */
+        .custom-marker.custom-marker--live-pin {
+            width: 64px;
+            height: 78px;
+            justify-content: flex-end;
+            align-items: center;
+            display: flex;
+            flex-direction: column;
+        }
+        @media (max-width: 767px) {
+            .custom-marker.custom-marker--live-pin {
+                width: 50px;
+                height: 62px;
+            }
+        }
+        .marker-pin {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            position: relative;
+            transform-origin: center bottom;
+        }
+        .marker-pin > .marker-inner,
+        .marker-pin > .marker-inner-livepost {
+            width: 54px;
+            height: 54px;
+            flex-shrink: 0;
+            box-sizing: border-box;
+            border-radius: 50%;
+        }
+        .marker-pin > .marker-inner-livepost {
+            background: #fff;
+            box-shadow: 0 3px 8px rgba(0, 0, 0, 0.35);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+        @media (max-width: 767px) {
+            .marker-pin > .marker-inner,
+            .marker-pin > .marker-inner-livepost {
+                width: 42px;
+                height: 42px;
+            }
+        }
+        .marker-pin--floating {
+            animation: marker-pin-float 3s ease-in-out infinite;
+        }
+        @keyframes marker-pin-float {
+            0%, 100% { transform: translateY(0); }
+            50%      { transform: translateY(-5px); }
+        }
+        .marker-pin-stem {
+            width: 0;
+            height: 0;
+            margin-top: -5px;
+            margin-bottom: 0;
+            border-left: 10px solid transparent;
+            border-right: 10px solid transparent;
+            border-top: 15px solid var(--stem-color, #2196F3);
+            filter: drop-shadow(0 2px 5px rgba(0, 0, 0, 0.32));
+            pointer-events: none;
+        }
+        @media (max-width: 767px) {
+            .marker-pin-stem {
+                margin-top: -4px;
+                border-left-width: 8px;
+                border-right-width: 8px;
+                border-top-width: 12px;
+            }
+        }
+        /* ラベルは丸い頭と地面アンカーのあいだ（茎の上部付近） */
+        .custom-marker--live-pin .marker-live-badge {
+            bottom: 18px;
+            max-width: none;
+            font-size: 8px;
+            padding: 2px 7px;
+        }
+        @media (max-width: 767px) {
+            .custom-marker--live-pin .marker-live-badge {
+                bottom: 14px;
+                font-size: 7px;
+                padding: 1px 5px;
+            }
+        }
+        .custom-marker--live-pin.active .marker-inner,
+        .custom-marker--live-pin.active .marker-inner-livepost {
+            transform: none;
+            border-color: var(--color-accent);
+            border-width: 4px;
+            box-shadow: 0 0 0 4px rgba(255, 92, 56, 0.25), 0 6px 20px rgba(0, 0, 0, 0.4);
+        }
+        .custom-marker--live-pin.active .marker-pin--floating {
+            animation: none;
+        }
+        .custom-marker--live-pin.active .marker-pin {
+            animation: marker-pin-pop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+        }
+        @keyframes marker-pin-pop {
+            0%   { transform: scale(1); }
+            60%  { transform: scale(1.5); }
+            100% { transform: scale(1.38); }
+        }
+        .custom-marker--live-pin.active .marker-pin-stem {
+            filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.35));
+        }
+        .live-standalone-marker:not(.custom-marker--live-pin) .marker-inner-livepost {
+            width: 100%; height: 100%; border-radius: 50%; border-width: 3px;
+            background: #fff; box-shadow: 0 3px 8px rgba(0, 0, 0, 0.35);
+            display: flex; align-items: center; justify-content: center;
+            overflow: hidden;
+        }
+        .live-standalone-marker {
+            width: 52px; height: 52px;
+        }
+        .live-standalone-marker.custom-marker--live-pin {
+            width: 58px;
+            height: 72px;
+        }
+        @media (max-width: 767px) {
+            .live-standalone-marker.custom-marker--live-pin {
+                width: 46px;
+                height: 60px;
+            }
+            .live-standalone-marker:not(.custom-marker--live-pin) {
+                width: 40px;
+                height: 40px;
+            }
+        }
+        .card-live-post {
+            margin-top: 4px; padding: 5px 7px;
+            background: #E3F2FD; border-radius: 7px;
+            border-left: 3px solid #2196F3;
+            pointer-events: none;
+        }
+        .card-live-post * { pointer-events: none; }
+        /* 画像上に LIVE バッジがあるため、本文エリアはカテゴリ・時刻・1行プレビューのみ */
+        .card-live-post--compact { margin-top: 4px; padding: 4px 7px; }
+        .card-live-compact-meta {
+            display: flex; align-items: baseline; gap: 6px; flex-wrap: nowrap;
+            font-size: 9px; font-weight: bold; color: #1565C0;
+            min-width: 0;
+        }
+        .card-live-cat { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .card-live-post--compact .card-live-message {
+            font-size: 10px; color: #333;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+            line-height: 1.25; margin-top: 2px;
+        }
+        .card-live-message {
+            font-size: 11px; color: #333;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .card-live-time { font-size: 9px; color: #888; font-weight: normal; flex-shrink: 0; }
+        .modal-live-post {
+            margin: 0 0 16px; padding: 12px 14px;
+            background: #E3F2FD; border-radius: 12px;
+            border-left: 4px solid #2196F3;
+        }
+        .modal-live-post-header {
+            display: flex; align-items: center; gap: 8px; margin-bottom: 8px;
+        }
+        .modal-live-image {
+            width: 100%; border-radius: 8px; cursor: pointer;
+            max-height: 220px; object-fit: cover; display: block; margin-bottom: 8px;
+        }
+        .modal-live-message {
+            font-size: 14px; color: #333; line-height: 1.6; white-space: pre-wrap;
+        }
+        .modal-live-time { font-size: 12px; color: #999; }
+        /* ライトボックス */
+        .lightbox-overlay {
+            position: fixed; inset: 0; background: rgba(0,0,0,0.92);
+            z-index: 3000; display: none;
+            justify-content: center; align-items: center; cursor: pointer;
+        }
+        .lightbox-overlay.open { display: flex; }
+        .lightbox-img {
+            max-width: 95vw; max-height: 90vh;
+            object-fit: contain; border-radius: 8px;
+        }
+    </style>
+</head>
+<body>
+
+<div id="loading">
+    <i class="fas fa-water fa-spin"></i> Loading...
+    <div class="loading-retry" id="loading-retry">
+        <button onclick="DataModule.retryFetch()"><i class="fas fa-redo"></i> Retry</button>
+    </div>
+</div>
+
+<!-- ============================================================
+     LEFT CONTROLS
+     ============================================================ -->
+<div class="controls-container" id="controls-container">
+
+    <!-- ホーム（マップリセット） — モバイルのみ表示 -->
+    <button class="ctrl-btn bottom-tab-home tab-active" id="tab-home" onclick="UIModule.onTabTap('home')">
+        <i class="fas fa-map"></i> <span id="home-btn-text">マップ</span>
+    </button>
+
+    <!-- カテゴリフィルター -->
+    <div class="ctrl-panel-wrapper">
+        <button class="ctrl-btn primary" id="tab-filter" onclick="UIModule.onTabTap('filter')">
+            <i class="fas fa-filter"></i> <span id="filter-btn-text">絞り込み</span>
+        </button>
+        <div class="ctrl-panel" id="filter-panel">
+            <div class="ctrl-panel-title">カテゴリ</div>
+            <div id="filter-list"></div>
+        </div>
+    </div>
+
+    <!-- レイヤー管理 -->
+    <div class="ctrl-panel-wrapper">
+        <button class="ctrl-btn layer" id="tab-layer" onclick="UIModule.onTabTap('layer')">
+            <i class="fas fa-layer-group"></i> <span id="layer-btn-text">レイヤー</span>
+        </button>
+        <div class="ctrl-panel" id="layer-panel">
+            <div class="ctrl-panel-title">表示レイヤー</div>
+            <div id="layer-list"></div>
+        </div>
+    </div>
+
+    <!-- 言語切替 -->
+    <button class="ctrl-btn" id="tab-lang" onclick="UIModule.onTabTap('lang')">
+        <i class="fas fa-globe"></i> <span id="lang-text">JP</span>
+    </button>
+</div>
+
+<!-- ============================================================
+     NEWS TICKER
+     ============================================================ -->
+<div class="news-ticker-wrapper" id="news-ticker-wrapper" style="display:none;">
+    <div class="news-ticker" id="news-ticker">
+        <div class="news-icon-area" id="ticker-icon-area"><i class="fas fa-bullhorn"></i></div>
+        <!-- LIVE投稿サムネ（画像ありのときだけ表示） -->
+        <img id="ticker-live-thumb" class="ticker-live-thumb" src="" alt=""
+             style="display:none" onclick="UIModule._onTickerThumbClick()">
+        <div class="news-content-area" onclick="App.focusCurrentNews()">
+            <div class="news-text" id="ticker-text"></div>
+            <div class="news-spot-name" id="ticker-spot"></div>
+        </div>
+        <div class="news-controls">
+            <span class="news-counter" id="ticker-counter"></span>
+            <button class="news-list-btn" onclick="UIModule.openNewsList()">
+                <i class="fas fa-list-ul"></i>
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- MOBILE PANEL OVERLAY -->
+<div class="ctrl-panel-overlay" id="ctrl-panel-overlay" onclick="UIModule.closePanelOverlay()"></div>
+
+<!-- MAP -->
+<div id="map"></div>
+
+<!-- MAP CONTROLS (右下) -->
+<div class="map-controls">
+    <button class="btn-control btn-gps"   onclick="MapModule.flyToUser()"><i class="fas fa-location-arrow"></i></button>
+    <button class="btn-control btn-reset" onclick="MapModule.fitBounds()"><i class="fas fa-map"></i></button>
+</div>
+
+<!-- CARD PANEL -->
+<div class="card-panel-container">
+    <div class="card-panel-mobile-inner">
+        <button type="button" class="card-panel-handle" id="card-panel-handle"
+            aria-expanded="true" aria-controls="slide-panel"
+            aria-label="店舗カードを隠す"
+            onclick="event.stopPropagation(); UIModule.toggleCardsSheet();">
+            <span class="card-panel-handle-pill" aria-hidden="true"></span>
+            <i class="fas fa-chevron-down" aria-hidden="true"></i>
+        </button>
+        <div class="scroll-wrapper" id="slide-panel"></div>
+    </div>
+</div>
+
+<!-- SIDEBAR TOGGLE (PC only) -->
+<button class="sidebar-toggle-btn" id="sidebar-toggle-btn" onclick="UIModule.toggleSidebar()" title="パネルを折りたたむ">
+    <i class="fas fa-chevron-left"></i>
+</button>
+
+<!-- DATA REFRESH INDICATOR -->
+<div id="refresh-indicator"><i class="fas fa-sync-alt fa-spin"></i> データ更新中...</div>
+
+<!-- ============================================================
+     MODALS
+     ============================================================ -->
+
+<!-- ニュース一覧モーダル -->
+<div class="modal-overlay" id="news-list-overlay" onclick="UIModule.closeNewsList(event)">
+    <div class="news-list-card">
+        <div class="news-list-header">
+            <span id="news-list-title">お知らせ一覧</span>
+            <button class="news-list-close" onclick="UIModule.closeNewsList(null, true)">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="news-list-body" id="news-list-content"></div>
+    </div>
+</div>
+
+<!-- 詳細モーダル -->
+<div class="modal-overlay" id="modal-overlay" onclick="UIModule.closeModal(event)">
+    <div class="modal-content">
+        <div class="modal-header">
+            <div class="modal-slider" id="modal-slider">
+                <div class="modal-slider-track" id="modal-slider-track"></div>
+                <button class="slider-nav slider-prev hidden" id="slider-prev" onclick="UIModule.sliderNav(-1)">
+                    <i class="fas fa-chevron-left"></i>
+                </button>
+                <button class="slider-nav slider-next hidden" id="slider-next" onclick="UIModule.sliderNav(1)">
+                    <i class="fas fa-chevron-right"></i>
+                </button>
+                <div class="slider-dots" id="slider-dots"></div>
+            </div>
+            <button class="modal-close-btn" onclick="UIModule.closeModal(null, true)">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="modal-body">
+            <span id="modal-cat" style="font-size:12px; color:var(--color-text-sub);"></span>
+            <h2 class="modal-title" id="modal-title"></h2>
+            <div class="modal-hours" id="modal-hours-wrap" style="display:none;">
+                <i class="fas fa-clock"></i>
+                <span id="modal-hours"></span>
+            </div>
+            <div class="modal-tags" id="modal-tags"></div>
+            <div class="modal-contact" id="modal-contact" style="display:none;">
+                <p class="modal-contact-line" id="modal-address-wrap" style="display:none;">
+                    <i class="fas fa-map-marker-alt"></i>
+                    <span id="modal-address"></span>
+                </p>
+                <p class="modal-contact-line" id="modal-phone-wrap" style="display:none;">
+                    <i class="fas fa-phone"></i>
+                    <a id="modal-phone-link" href="#"></a>
+                </p>
+            </div>
+            <div class="modal-live-post" id="modal-live-post" style="display:none;"></div>
+            <div class="modal-text" id="modal-text"></div>
+            <a id="modal-nav-btn" class="btn-nav-large" target="_blank">
+                <i class="fas fa-location-arrow"></i> <span id="btn-nav-text">Google Mapsで見る</span>
+            </a>
+            <button class="btn-coupon-large" id="modal-coupon-btn" onclick="UIModule.showCoupon()">
+                <i class="fas fa-ticket-alt"></i> <span id="btn-coupon-text">クーポンを使う</span>
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- クーポンモーダル -->
+<div class="modal-overlay" id="coupon-overlay" onclick="UIModule.closeCoupon(event)">
+    <div class="coupon-card">
+        <div style="font-size:20px; font-weight:bold; color:#E65100; margin-bottom:10px;">Special Coupon</div>
+        <div class="coupon-text" id="coupon-text"></div>
+        <p style="font-size:12px; color:#666; margin-bottom:20px;">このスクリーンをご提示ください</p>
+        <button class="coupon-close" onclick="UIModule.closeCoupon(null, true)">閉じる</button>
+    </div>
+</div>
+
+<!-- ライトボックス (LIVE画像拡大) -->
+<div class="lightbox-overlay" id="lightbox-overlay" onclick="UIModule.closeLightbox()">
+    <img class="lightbox-img" id="lightbox-img" src="" alt="">
+</div>
+
+<!-- secrets / config は <head> で読み込み済み -->
+<script>
+'use strict';
+
+// ================================================================
+// CONFIG — web/config.js（エリア入替時は config.js のみ編集）
+//   列定義・MAP_IMAGE・TRANSLATIONS・GA ID 等はすべて config.js に集約
+//   ローカル微調整: config.local.js（Git 除外）
+// @see docs/AREA_MIGRATION_GUIDE.md
+// ================================================================
+const CONFIG = (typeof window !== 'undefined' && window.__SHIMODA_MAP_CONFIG__)
+    ? window.__SHIMODA_MAP_CONFIG__
+    : (function () {
+        console.error('[App] config.js が読み込まれていません。config.example.js を config.js にコピーしてください。');
+        return {
+            APP_TITLE: 'Digital Map',
+            GA_MEASUREMENT_ID: '',
+            MAPBOX_TOKEN: 'pk.YOUR_MAPBOX_TOKEN',
+            SHEET_ID: 'YOUR_GOOGLE_SHEET_ID',
+            COLS: { NAME: 1, LAT: 2, LNG: 3 },
+            COLORS: { DEFAULT: '#0096C7', RED: '#FF5252', YELLOW: '#FFCA28' },
+            MAP_IMAGE: {
+                url: '100.png',
+                coordinates: [[0, 0], [0, 0], [0, 0], [0, 0]],
+                center: [0, 0],
+                initZoom: 15,
+                minZoom: 13,
+                maxZoom: 19,
+                maxBounds: [[0, 0], [0, 0]],
+                cacheVersion: 'fallback'
+            },
+            POLL_INTERVAL: 30000,
+            POSTS_SHEET: 'posts',
+            LIVE_POST_POLL_INTERVAL: 30000,
+            EVENTS_SHEET: 'event_schedule',
+            EVENT_SCHEDULE_LEAD_MINUTES: 30,
+            EVENT_SCHEDULE_POLL_INTERVAL: 60000,
+            EVENT_SCHEDULE_TICK_MS: 60000,
+            TRANSLATIONS: { ja: {}, en: {} }
+        };
+    })();
+
+// ================================================================
+// State — 共有状態オブジェクト
+// ================================================================
+const State = {
+    language:            'ja',
+    allSpots:            [],
+    activeMarkers:       [],
+    userLocationMarker:  null,
+    currentSpot:         null,
+    newsList:            [],
+    currentNewsIndex:    0,
+    newsInterval:        null,
+    pollInterval:        null,
+    lastDataHash:        '',
+    isPC:                window.innerWidth >= 768,
+    selectedTags:        new Set(),
+    postsByStoreId:      {},     // fixed 最新1件／店（カード・マーカー LIVE 用）
+    liveStandalonePosts: [],     // 運営スポット / GPS（独立マーカー）
+    liveMarkers:           [],
+    livePostPollInterval:  null,
+    tickerList:            [],
+    scheduledEvents:       [],   // EventScheduleModule がセット
+    scheduleMarkers:       [],   // スケジュールピン (MapboxGL Marker)
+    scheduleTickInterval:  null  // 1 分ティック
+};
+
+// ================================================================
+// Helpers — 共通ユーティリティ
+// ================================================================
+const t   = (key) => CONFIG.TRANSLATIONS[State.language][key] ?? key;
+const val = (spot, key) =>
+    State.language === 'ja' ? spot[key] : (spot[`${key}_en`] || spot[key]);
+
+const getStatusInfo = (status) => {
+    if (!status) return { color: CONFIG.COLORS.DEFAULT, bg: '#E0F7FF', text: '#006494' };
+    const s = String(status);
+    if (s.match(/満|Full|×|Red/i))      return { color: CONFIG.COLORS.RED,    bg: '#FFEBEE', text: '#C62828' };
+    if (s.match(/混|Crowded|△|Yellow/i)) return { color: CONFIG.COLORS.YELLOW, bg: '#FFF8E1', text: '#F9A825' };
+    return { color: CONFIG.COLORS.DEFAULT, bg: '#E0F7FF', text: '#006494' };
+};
+
+const CATEGORY_ICONS = {
+    'グルメ':         'fa-utensils',
+    'レストラン':     'fa-utensils',
+    'カフェ':         'fa-mug-hot',
+    '居酒屋':         'fa-beer-mug-empty',
+    'スイーツ':       'fa-ice-cream',
+    '観光':           'fa-binoculars',
+    'スポット':       'fa-camera',
+    '体験':           'fa-star',
+    '宿泊':           'fa-bed',
+    'ホテル':         'fa-hotel',
+    '海・ビーチ':     'fa-water',
+    'マリンスポーツ': 'fa-person-swimming',
+    'スポーツ':       'fa-person-running',
+    'ショッピング':   'fa-bag-shopping',
+    'お土産':         'fa-gift',
+    '施設':           'fa-building',
+    '駐車場':         'fa-square-parking',
+    'サービス':       'fa-wrench',
+    'Food':           'fa-utensils',
+    'Cafe':           'fa-mug-hot',
+    'Sightseeing':    'fa-binoculars',
+    'Experience':     'fa-star',
+    'Lodging':        'fa-bed',
+    'Sea':            'fa-water',
+    'Shopping':       'fa-bag-shopping',
+    'Souvenir':       'fa-gift',
+};
+const getCategoryIcon = (cat) => CATEGORY_ICONS[cat] || 'fa-location-dot';
+
+/**
+ * 手動貼り付け（Drive 共有リンク）と AppSheet 画像列の両方を想定し、
+ * <img> で表示しやすい URL に揃える。
+ *
+ * ※ drive.google.com/uc?export=view は 2024年以降クロスオリジン 403 が多発。
+ *    代わりに /thumbnail?id=FILE_ID&sz=w800 を使う（<img> 埋め込みに対応）。
+ *
+ * 画像は Drive 側で「リンクを知っている全員が閲覧可」にしてください。
+ */
+function normalizeImageUrl(raw) {
+    if (typeof raw !== 'string') return '';
+    let s = raw.trim();
+    if (!s) return '';
+    if (!/^https?:\/\//i.test(s)) return '';
+
+    // Google の url ラッパーを展開
+    try {
+        const u0 = new URL(s);
+        if (u0.hostname === 'www.google.com' && u0.pathname === '/url') {
+            const q = u0.searchParams.get('q');
+            if (q && /^https?:\/\//i.test(q)) s = decodeURIComponent(q);
+        }
+    } catch (_) { /* ignore */ }
+
+    // Drive ファイル ID を抽出するヘルパー
+    const driveId = (() => {
+        // /file/d/FILE_ID/
+        const m1 = s.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/);
+        if (m1) return m1[1];
+        // /thumbnail?id= または /uc?id= など
+        try {
+            const u = new URL(s);
+            if (u.hostname === 'drive.google.com' || u.hostname === 'drive.usercontent.google.com') {
+                const id = u.searchParams.get('id');
+                if (id && /^[a-zA-Z0-9_-]+$/.test(id)) return id;
+            }
+        } catch (_) { /* ignore */ }
+        return null;
+    })();
+
+    if (driveId) {
+        // thumbnail エンドポイントは <img> クロスオリジンで 200 が返る
+        return `https://drive.google.com/thumbnail?id=${driveId}&sz=w800`;
+    }
+
+    // lh3.googleusercontent.com 等（AppSheet が直接返す場合）はそのまま
+    return s;
+}
+
+function timeAgo(date) {
+    const diffMs = Date.now() - date.getTime();
+    const diffMin = Math.floor(diffMs / 60000);
+    if (diffMin < 1)  return 'たった今';
+    if (diffMin < 60) return `${diffMin}分前`;
+    const diffH = Math.floor(diffMin / 60);
+    if (diffH < 24)   return `${diffH}時間前`;
+    return `${Math.floor(diffH / 24)}日前`;
+}
+
+/** gviz が返すセル値から Date に（Date() 文字列 / 配列 / シリアル日付 / ISO 等） */
+function parseSheetDate(tsVal) {
+    if (tsVal == null || tsVal === '') return null;
+    if (tsVal instanceof Date && !isNaN(tsVal.getTime())) return tsVal;
+    // gviz: [yyyy, mm0, dd, hh?, mi?, ss?] 月は 0 始まり
+    if (Array.isArray(tsVal) && tsVal.length >= 3) {
+        const y = Number(tsVal[0]);
+        const m0 = Number(tsVal[1]);
+        const d = Number(tsVal[2]);
+        const h = tsVal.length > 3 ? Number(tsVal[3]) || 0 : 0;
+        const mi = tsVal.length > 4 ? Number(tsVal[4]) || 0 : 0;
+        const s = tsVal.length > 5 ? Number(tsVal[5]) || 0 : 0;
+        const ts = new Date(y, m0, d, h, mi, s);
+        return isNaN(ts.getTime()) ? null : ts;
+    }
+    let ts = null;
+    if (typeof tsVal === 'string' && tsVal.startsWith('Date(')) {
+        const parts = tsVal.slice(5, -1).split(',').map(Number);
+        ts = new Date(parts[0], parts[1], parts[2], parts[3] || 0, parts[4] || 0, parts[5] || 0);
+    } else if (typeof tsVal === 'number' && tsVal > 2000 && tsVal < 800000) {
+        // スプレッドシートの日付シリアル（1900 系・小数は時刻）
+        ts = new Date((tsVal - 25569) * 86400000);
+    } else {
+        ts = new Date(tsVal);
+    }
+    if (!ts || isNaN(ts.getTime())) return null;
+    return ts;
+}
+
+/** マスタ・posts 双方で store_id キーを一致（日本語店舗名可・前後・連続空白のみ正規化） */
+function normalizeStoreId_(raw) {
+    if (raw == null || String(raw).trim() === '') return '';
+    return String(raw).replace(/\s+/g, ' ').trim();
+}
+
+function roundCoord5(v) {
+    return Math.round(Number(v) * 1e5) / 1e5;
+}
+
+const LIVE_RING_COLOR_STORE = '#2196F3';
+
+const LIVE_MARKER_COLOR_BY_ROLE = {
+    store:        '#2196F3',
+    operator:     '#E53935',
+    contributor:  '#FDD835'
+};
+
+/** posts の role 列（store / operator / contributor 等）を表示用の短い日本語に */
+function liveRoleJa(role) {
+    const k = role != null ? String(role).trim().toLowerCase() : '';
+    if (k === 'store') return '店舗';
+    if (k === 'operator') return '運営';
+    if (k === 'contributor') return '投稿';
+    if (!k) return '';
+    return role;
+}
+
+function escapeHtml(s) {
+    return String(s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
+// ================================================================
+// DataModule — Google Sheets 取得・パース・ポーリング
+//   列定義は config.js の COLS（エリアごとに変更可）
+// ================================================================
+const DataModule = {
+
+    _fetchTimeout: null,
+    _retryCount: 0,
+    _maxRetries: 3,
+
+    fetch() {
+        this._retryCount = 0;
+        this._doFetch();
+    },
+
+    _doFetch() {
+        const cbName = '_gvizCb';
+        const oldScript = document.getElementById('gviz-script');
+        if (oldScript) oldScript.remove();
+
+        clearTimeout(this._fetchTimeout);
+        this._fetchTimeout = setTimeout(() => {
+            console.warn('[DataModule] タイムアウト - リトライ', this._retryCount + 1);
+            if (this._retryCount < this._maxRetries) {
+                this._retryCount++;
+                this._doFetch();
+            } else {
+                const retryEl = document.getElementById('loading-retry');
+                if (retryEl) retryEl.style.display = 'block';
+            }
+        }, 12000);
+
+        const script = document.createElement('script');
+        script.id = 'gviz-script';
+        script.src = `https://docs.google.com/spreadsheets/d/${CONFIG.SHEET_ID}/gviz/tq?tqx=responseHandler:${cbName}&_=${Date.now()}`;
+        script.onerror = () => {
+            console.warn('[DataModule] スクリプト読み込み失敗');
+            clearTimeout(this._fetchTimeout);
+            if (this._retryCount < this._maxRetries) {
+                this._retryCount++;
+                setTimeout(() => this._doFetch(), 2000 * this._retryCount);
+            } else {
+                const retryEl = document.getElementById('loading-retry');
+                if (retryEl) retryEl.style.display = 'block';
+            }
+        };
+        document.body.appendChild(script);
+    },
+
+    retryFetch() {
+        const retryEl = document.getElementById('loading-retry');
+        if (retryEl) retryEl.style.display = 'none';
+        this.fetch();
+    },
+
+    onLoaded(json) {
+        clearTimeout(this._fetchTimeout);
+        const spots = DataModule._parse(json);
+
+        const hash = spots.map(s =>
+            `${s.id}|${s.status}|${s.news}|${s.imageUrl || ''}|${s.imageUrl2 || ''}|${s.imageUrl3 || ''}|${s.address || ''}|${s.phone || ''}|${s.hours || ''}|${(s.tags || []).join('+')}`
+        ).join(',');
+        const loadingEl = document.getElementById('loading');
+        const isInitialLoad = loadingEl && loadingEl.style.display !== 'none';
+        if (hash === State.lastDataHash && !isInitialLoad) {
+            DataModule._flashIndicator();
+            return;
+        }
+        State.lastDataHash = hash;
+        State.allSpots = spots;
+        App._onDataReady();
+        DataModule._flashIndicator();
+    },
+
+    _parse(json) {
+        if (!json?.table?.rows) return [];
+        const { COLS } = CONFIG;
+        return json.table.rows.reduce((acc, row, i) => {
+            if (!row?.c) return acc;
+            const name = row.c[COLS.NAME]?.v;
+            const lat  = row.c[COLS.LAT]?.v;
+            const lng  = row.c[COLS.LNG]?.v;
+            if (!name || lat == null || lng == null) return acc;
+            // HIDDEN 列が false/"FALSE" なら非表示
+            if (row.c[COLS.HIDDEN]?.v === false || row.c[COLS.HIDDEN]?.v === 'FALSE') return acc;
+
+            let url = row.c[COLS.URL]?.v || '';
+            if (typeof url !== 'string' || !/^https?:\/\//i.test(url.trim())) url = '';
+            else url = normalizeImageUrl(url);
+
+            let url2 = row.c[COLS.IMAGE_URL_2]?.v || '';
+            if (typeof url2 !== 'string' || !/^https?:\/\//i.test(url2.trim())) url2 = '';
+            else url2 = normalizeImageUrl(url2);
+
+            let url3 = row.c[COLS.IMAGE_URL_3]?.v || '';
+            if (typeof url3 !== 'string' || !/^https?:\/\//i.test(url3.trim())) url3 = '';
+            else url3 = normalizeImageUrl(url3);
+
+            const storeIdRaw = row.c[COLS.STORE_ID]?.v;
+            const storeId = storeIdRaw != null && String(storeIdRaw).trim() !== ''
+                ? normalizeStoreId_(storeIdRaw)
+                : '';
+            const id = storeId ? `spot_${storeId.replace(/\s+/g, '_')}` : `spot_${i}`;
+
+            const address   = row.c[COLS.ADDRESS]?.v   != null ? String(row.c[COLS.ADDRESS].v)   : '';
+            const addressEn = row.c[COLS.ADDRESS_EN]?.v != null ? String(row.c[COLS.ADDRESS_EN].v) : '';
+            const phone     = row.c[COLS.PHONE]?.v     != null ? String(row.c[COLS.PHONE].v)     : '';
+            const phoneEn   = row.c[COLS.PHONE_EN]?.v   != null ? String(row.c[COLS.PHONE_EN].v)   : '';
+
+            // タグ: "#ペット可, #雨の日OK" → ['ペット可', '雨の日OK']
+            const _parseTags = (raw) => raw
+                ? String(raw).split(/[,、#\s]+/).map(t => t.replace(/^#/, '').trim()).filter(Boolean)
+                : [];
+            const tags    = _parseTags(row.c[COLS.TAGS]?.v);
+            const tagsEn  = _parseTags(row.c[COLS.TAGS_EN]?.v).length
+                ? _parseTags(row.c[COLS.TAGS_EN]?.v) : tags;
+
+            const hours   = row.c[COLS.HOURS]?.v   != null ? String(row.c[COLS.HOURS].v)   : '';
+            const hoursEn = row.c[COLS.HOURS_EN]?.v != null ? String(row.c[COLS.HOURS_EN].v) : '';
+
+            acc.push({
+                id,
+                storeId,
+                coords:     [Number(lng), Number(lat)],
+                emoji:      row.c[COLS.EMOJI]?.v   || '📍',
+                imageUrl:   url,
+                imageUrl2:  url2,
+                imageUrl3:  url3,
+                status:     row.c[COLS.STATUS]?.v  || '',
+                name:       name,
+                desc:       row.c[COLS.DESC]?.v    || '',
+                category:   row.c[COLS.CAT]?.v     || 'Others',
+                news:       row.c[COLS.NEWS]?.v    || '',
+                detail:     row.c[COLS.DETAIL]?.v  || '',
+                coupon:     row.c[COLS.COUPON]?.v  || '',
+                name_en:    row.c[COLS.NAME_EN]?.v   || name,
+                desc_en:    row.c[COLS.DESC_EN]?.v   || row.c[COLS.DESC]?.v   || '',
+                category_en:row.c[COLS.CAT_EN]?.v   || row.c[COLS.CAT]?.v    || 'Others',
+                news_en:    row.c[COLS.NEWS_EN]?.v   || '',
+                detail_en:  row.c[COLS.DETAIL_EN]?.v || row.c[COLS.DETAIL]?.v || '',
+                coupon_en:  row.c[COLS.COUPON_EN]?.v || row.c[COLS.COUPON]?.v || '',
+                address,
+                address_en: addressEn,
+                phone,
+                phone_en:   phoneEn,
+                tags,
+                tags_en:    tagsEn,
+                hours,
+                hours_en:   hoursEn
+            });
+            return acc;
+        }, []);
+    },
+
+    // 30秒ポーリング開始（AppSheet でデータ更新後に自動反映）
+    startPolling() {
+        if (!CONFIG.POLL_INTERVAL) return;
+        clearInterval(State.pollInterval);
+        State.pollInterval = setInterval(() => DataModule.fetch(), CONFIG.POLL_INTERVAL);
+    },
+
+    _flashIndicator() {
+        const el = document.getElementById('refresh-indicator');
+        el.classList.add('show');
+        setTimeout(() => el.classList.remove('show'), 1800);
+    }
+};
+
+// JSONP コールバックをグローバルに公開（ドット付き名前は一部ブラウザで問題があるため単純名を使用）
+window._gvizCb = function(json) {
+    clearTimeout(DataModule._fetchTimeout);
+    DataModule.onLoaded(json);
+};
+
+// ================================================================
+// PostsModule — LIVE投稿（posts シート）取得・ピン統合・ポーリング
+// ================================================================
+const PostsModule = {
+
+    _fetchTimeout: null,
+
+    fetch() {
+        const cbName = '_gvizPostsCb';
+        const oldScript = document.getElementById('gviz-posts-script');
+        if (oldScript) oldScript.remove();
+
+        clearTimeout(this._fetchTimeout);
+        this._fetchTimeout = setTimeout(() => {
+            console.warn('[PostsModule] タイムアウト');
+        }, 12000);
+
+        const script = document.createElement('script');
+        script.id = 'gviz-posts-script';
+        const sheetParam = encodeURIComponent(CONFIG.POSTS_SHEET || 'posts');
+        script.src =
+            `https://docs.google.com/spreadsheets/d/${CONFIG.SHEET_ID}/gviz/tq?tqx=responseHandler:${cbName}&sheet=${sheetParam}&_=${Date.now()}`;
+        script.onerror = () => {
+            clearTimeout(this._fetchTimeout);
+            console.warn('[PostsModule] posts シート取得失敗');
+        };
+        document.body.appendChild(script);
+    },
+
+    onLoaded(json) {
+        clearTimeout(this._fetchTimeout);
+        const { postsByStoreId, liveStandalonePosts } = this._parse(json);
+        State.postsByStoreId = postsByStoreId;
+        State.liveStandalonePosts = liveStandalonePosts;
+
+        PostsModule._attachLiveToSpots();
+
+        App._refreshUI();
+    },
+
+    _attachLiveToSpots() {
+        State.allSpots.forEach(spot => {
+            const sid = (spot.storeId || '').trim();
+            spot.livePost = sid ? (State.postsByStoreId[sid] || null) : null;
+        });
+    },
+
+    /**
+     * 列: postId userId role sourceType category text imageUrl lat lng storeId spotId createdAt expiresAt isVisible
+     */
+    _parse(json) {
+        const postsByStoreId = {};
+        const mobileList = [];
+
+        const now = Date.now();
+        const buckets = {}; // dedupキーごと最新1件
+
+        if (!json?.table?.rows) return { postsByStoreId, liveStandalonePosts: mobileList };
+
+        json.table.rows.forEach(row => {
+            if (!row?.c) return;
+
+            const isVisibleRaw = row.c[13]?.v;
+            if (isVisibleRaw === false || String(isVisibleRaw).toUpperCase() === 'FALSE') return;
+
+            const text = row.c[5]?.v != null ? String(row.c[5].v).trim() : '';
+            const rawImg = row.c[6]?.v != null ? String(row.c[6].v).trim() : '';
+            const imageUrl = rawImg ? normalizeImageUrl(rawImg) : '';
+            if (!text && !imageUrl) return;
+
+            const expiresAt = parseSheetDate(row.c[12]?.v);
+            if (!expiresAt || expiresAt.getTime() <= now) return;
+
+            const role = row.c[2]?.v != null ? String(row.c[2].v).trim().toLowerCase() : '';
+            const sourceType = row.c[3]?.v != null ? String(row.c[3].v).trim().toLowerCase() : '';
+            const category = row.c[4]?.v != null ? String(row.c[4].v).trim() : '';
+
+            let lat = row.c[7]?.v;
+            let lng = row.c[8]?.v;
+            lat = lat != null && lat !== '' ? Number(lat) : null;
+            lng = lng != null && lng !== '' ? Number(lng) : null;
+
+            const createdAt = parseSheetDate(row.c[11]?.v);
+            if (!createdAt) return;
+
+            const storeId = normalizeStoreId_(row.c[9]?.v);
+            const spotIdCol = row.c[10]?.v != null ? String(row.c[10].v).trim() : '';
+
+            const post = {
+                postId:     row.c[0]?.v != null ? String(row.c[0].v) : '',
+                userId:     row.c[1]?.v != null ? String(row.c[1].v) : '',
+                role,
+                sourceType,
+                category,
+                message: text,
+                imageUrl,
+                lat,
+                lng,
+                storeId,
+                spotId:     spotIdCol,
+                timestamp:  createdAt,
+                expiresAt
+            };
+
+            let dedupKey;
+            if (sourceType === 'fixed' && storeId) {
+                dedupKey = `f_${category}_${storeId}`;
+            } else if (lat != null && lng != null && !isNaN(lat) && !isNaN(lng)) {
+                dedupKey = `m_${category}_${roundCoord5(lat)}_${roundCoord5(lng)}`;
+            } else return;
+
+            const prev = buckets[dedupKey];
+            if (!prev || createdAt.getTime() > prev.timestamp.getTime())
+                buckets[dedupKey] = post;
+        });
+
+        Object.values(buckets).forEach(p => {
+            if (p.sourceType === 'fixed' && p.storeId) {
+                const sid = p.storeId;
+                const cur = postsByStoreId[sid];
+                if (!cur || p.timestamp.getTime() > cur.timestamp.getTime()) {
+                    postsByStoreId[sid] = {
+                        timestamp:  p.timestamp,
+                        message:    p.message,
+                        imageUrl:   p.imageUrl,
+                        category:   p.category,
+                        role:       p.role,
+                        sourceType: p.sourceType,
+                        expiresAt:  p.expiresAt,
+                        lat:        p.lat,
+                        lng:        p.lng
+                    };
+                }
+                return;
+            }
+            if (p.sourceType === 'gps' || p.sourceType === 'selected') {
+                mobileList.push(p);
+            }
+        });
+
+        mobileList.sort((a, b) => b.timestamp - a.timestamp);
+        return { postsByStoreId, liveStandalonePosts: mobileList };
+    },
+
+    startPolling() {
+        if (!CONFIG.LIVE_POST_POLL_INTERVAL) return;
+        clearInterval(State.livePostPollInterval);
+        State.livePostPollInterval =
+            setInterval(() => PostsModule.fetch(), CONFIG.LIVE_POST_POLL_INTERVAL);
+    }
+};
+
+window._gvizPostsCb = function(json) {
+    clearTimeout(PostsModule._fetchTimeout);
+    PostsModule.onLoaded(json);
+};
+
+// ================================================================
+// EventScheduleModule — 祭スケジュール（event_schedule シート）取得・パース
+// ================================================================
+const EventScheduleModule = {
+
+    _fetchTimeout: null,
+
+    fetch() {
+        const cbName = '_gvizEventsCb';
+        const oldScript = document.getElementById('gviz-events-script');
+        if (oldScript) oldScript.remove();
+
+        clearTimeout(this._fetchTimeout);
+        this._fetchTimeout = setTimeout(() => {
+            console.warn('[EventSchedule] タイムアウト');
+        }, 12000);
+
+        const script = document.createElement('script');
+        script.id = 'gviz-events-script';
+        const sheetParam = encodeURIComponent(CONFIG.EVENTS_SHEET || 'event_schedule');
+        script.src =
+            `https://docs.google.com/spreadsheets/d/${CONFIG.SHEET_ID}/gviz/tq?tqx=responseHandler:${cbName}&sheet=${sheetParam}&_=${Date.now()}`;
+        script.onerror = () => {
+            clearTimeout(this._fetchTimeout);
+            console.warn('[EventSchedule] シート取得失敗');
+        };
+        document.body.appendChild(script);
+    },
+
+    onLoaded(json) {
+        clearTimeout(this._fetchTimeout);
+        State.scheduledEvents = this._parse(json);
+        App._applyFilters();
+    },
+
+    /**
+     * 列 (0-index):
+     *  0: event_id  1: title  2: start_at  3: lat  4: lng
+     *  5: emoji     6: duration_minutes  7: lead_minutes
+     *  8: hidden（TRUE/1/"TRUE" のとき除外・空欄は掲載）  9: title_en  10: image_url（任意・ポップアップに1枚）
+     */
+    _parse(json) {
+        if (!json?.table?.rows) return [];
+        const events = [];
+        json.table.rows.forEach((row, i) => {
+            if (!row?.c) return;
+
+            // hidden 列: TRUE / "TRUE" / 1 のときだけ除外（チェックボックス未チェック=false は「表示」扱い）
+            const hid = row.c[8]?.v;
+            if (hid === true || hid === 1 || String(hid).trim().toUpperCase() === 'TRUE') return;
+
+            const title   = row.c[1]?.v != null ? String(row.c[1].v).trim() : '';
+            if (!title) return;
+
+            const startAt = parseSheetDate(row.c[2]?.v);
+            if (!startAt) return;
+
+            const lat = row.c[3]?.v != null ? Number(row.c[3].v) : null;
+            const lng = row.c[4]?.v != null ? Number(row.c[4].v) : null;
+            if (lat == null || lng == null || isNaN(lat) || isNaN(lng)) return;
+
+            const emoji    = row.c[5]?.v ? String(row.c[5].v).trim() : '🎪';
+            const durMin   = row.c[6]?.v != null && row.c[6].v !== '' ? Number(row.c[6].v) : 60;
+            const leadMin  = row.c[7]?.v != null && row.c[7].v !== ''
+                ? Number(row.c[7].v)
+                : CONFIG.EVENT_SCHEDULE_LEAD_MINUTES;
+            const titleEn  = row.c[9]?.v ? String(row.c[9].v).trim() : title;
+            const imageUrl = row.c[10]?.v != null && String(row.c[10].v).trim() !== ''
+              ? String(row.c[10].v).trim()
+              : '';
+            const eventId  = row.c[0]?.v ? String(row.c[0].v).trim() : `ev_${i}`;
+
+            events.push({
+                id:        eventId,
+                title,
+                titleEn,
+                startAt,
+                endAt:     new Date(startAt.getTime() + durMin * 60000),
+                leadMs:    leadMin * 60000,
+                coords:    [lng, lat],
+                emoji,
+                imageUrl
+            });
+        });
+        return events;
+    },
+
+    /** 表示すべきイベントだけ返す */
+    visible(now = Date.now()) {
+        return State.scheduledEvents.filter(ev => {
+            const showFrom = ev.startAt.getTime() - ev.leadMs;
+            return now >= showFrom && now < ev.endAt.getTime();
+        });
+    },
+
+    startPolling() {
+        if (!CONFIG.EVENT_SCHEDULE_POLL_INTERVAL) return;
+        setInterval(() => EventScheduleModule.fetch(), CONFIG.EVENT_SCHEDULE_POLL_INTERVAL);
+    },
+
+    /** 1 分ティック: レイヤーのみ再描画（シートは再取得しない） */
+    startTick() {
+        if (!CONFIG.EVENT_SCHEDULE_TICK_MS) return;
+        clearInterval(State.scheduleTickInterval);
+        State.scheduleTickInterval = setInterval(
+            () => App._applyFilters(),
+            CONFIG.EVENT_SCHEDULE_TICK_MS
+        );
+    }
+};
+
+window._gvizEventsCb = function(json) {
+    clearTimeout(EventScheduleModule._fetchTimeout);
+    EventScheduleModule.onLoaded(json);
+};
+
+// ================================================================
+// LayerManager — レイヤー管理
+//   神輿レイヤーは js/mikoshi-main-map.js が GeoJSON を注入
+// ================================================================
+const LayerManager = {
+
+    // レイヤー定義
+    // type: 'markers'          → Mapbox HTML マーカー群
+    //       'geojson-line'     → GeoJSON LineString レイヤー
+    //       'geojson-fill'     → GeoJSON Polygon レイヤー
+    _defs: {
+        spots: {
+            name:    '店舗ピン',
+            name_en: 'Spots',
+            icon:    '📍',
+            color:   '#00897B',
+            visible: true,
+            type:    'markers'
+        },
+        routes: {
+            name:    'モデルルート',
+            name_en: 'Routes',
+            icon:    '🚶',
+            color:   '#FF5722',
+            visible: false,
+            type:    'geojson-line',
+            // 将来: Google Sheets や外部 GeoJSON URL からデータを注入
+            data: { type: 'FeatureCollection', features: [] }
+        },
+        areas: {
+            name:    'エリア',
+            name_en: 'Areas',
+            icon:    '🗺️',
+            color:   '#4CAF50',
+            visible: false,
+            type:    'geojson-fill',
+            data: { type: 'FeatureCollection', features: [] }
+        },
+        mikoshi: {
+            name:    '神輿ルート',
+            name_en: 'Mikoshi route',
+            icon:    '🏮',
+            color:   '#C62828',
+            visible: true,
+            type:    'mikoshi'
+        },
+        events: {
+            name:    '祭スケジュール',
+            name_en: 'Event Schedule',
+            icon:    '🎪',
+            color:   '#F57C00',
+            visible: true,
+            type:    'markers'
+        }
+    },
+
+    // マップロード後に初期化
+    init(map) {
+        this._map = map;
+        this._registerGeoJSON('routes', {
+            type:  'line',
+            paint: { 'line-color': '#FF5722', 'line-width': 4, 'line-dasharray': [2, 1] }
+        });
+        this._registerGeoJSON('areas', {
+            type:  'fill',
+            paint: { 'fill-color': '#4CAF50', 'fill-opacity': 0.25 }
+        });
+    },
+
+    _registerGeoJSON(id, layerOpt) {
+        const def = this._defs[id];
+        if (!def?.data) return;
+        this._map.addSource(id, { type: 'geojson', data: def.data });
+        this._map.addLayer({
+            id:     `${id}-layer`,
+            type:   layerOpt.type,
+            source: id,
+            paint:  layerOpt.paint,
+            layout: { visibility: def.visible ? 'visible' : 'none' }
+        });
+    },
+
+    // レイヤーの表示/非表示をトグル
+    toggle(id) {
+        const def = this._defs[id];
+        if (!def) return;
+        def.visible = !def.visible;
+
+        if (def.type === 'markers') {
+            // spots と events は両方 type:markers だが DOM は別配列（混在させない）
+            if (id === 'spots') {
+                State.activeMarkers.forEach(m => {
+                    m.getElement().style.display = def.visible ? '' : 'none';
+                });
+                State.liveMarkers.forEach(m => {
+                    m.getElement().style.display = def.visible ? '' : 'none';
+                });
+            } else if (id === 'events') {
+                State.scheduleMarkers.forEach(m => {
+                    m.getElement().style.display = def.visible ? '' : 'none';
+                });
+            }
+        } else if (def.type === 'mikoshi') {
+            if (typeof window.__mikoshiApplyVisibility === 'function') {
+                window.__mikoshiApplyVisibility();
+            }
+        } else {
+            const layerId = `${id}-layer`;
+            if (this._map?.getLayer(layerId)) {
+                this._map.setLayoutProperty(layerId, 'visibility', def.visible ? 'visible' : 'none');
+            }
+        }
+        UIModule.renderLayerPanel();
+    },
+
+    // 新レイヤーを動的追加（将来の拡張エントリポイント）
+    add(id, def) {
+        this._defs[id] = def;
+        if (def.type === 'geojson-line') {
+            this._registerGeoJSON(id, { type: 'line', paint: { 'line-color': def.color, 'line-width': 4 } });
+        } else if (def.type === 'geojson-fill') {
+            this._registerGeoJSON(id, { type: 'fill', paint: { 'fill-color': def.color, 'fill-opacity': 0.25 } });
+        }
+        UIModule.renderLayerPanel();
+    },
+
+    // GeoJSON データを更新（将来の拡張エントリポイント）
+    setData(id, geojson) {
+        this._map?.getSource(id)?.setData(geojson);
+    },
+
+    getDefs() { return this._defs; }
+};
+
+/** 神輿レイヤのユーザー表示（時間帯と AND。モジュールから参照） */
+window.__shimoda_getMikoshiLayerOn = () => !!LayerManager.getDefs().mikoshi?.visible;
+
+/** JST の暦・年月日（数値） */
+function getJstYmdParts(d) {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Tokyo',
+        year:     'numeric',
+        month:    '2-digit',
+        day:      '2-digit'
+    }).formatToParts(d);
+    const o = {};
+    for (let i = 0; i < parts.length; i++) {
+        const p = parts[i];
+        if (p.type === 'year' || p.type === 'month' || p.type === 'day') o[p.type] = +p.value;
+    }
+    return { y: o.year, m: o.month, d: o.day };
+}
+
+/** JST のその暦日 12:00 に対応する UTC の Date（SunCalc.getTimes 用） */
+function jstCalendarNoonUtcDate(y, m, day) {
+    return new Date(Date.UTC(y, m - 1, day, 3, 0, 0));
+}
+
+/**
+ * イラスト切替フェーズ（CONFIG.MAP_IMAGE + SunCalc）
+ * day | sunset | night
+ */
+function getIllustrationPhase(now, cfg) {
+    if (typeof SunCalc === 'undefined' || !cfg) return 'day';
+    const lat = cfg.solarLat != null ? Number(cfg.solarLat) : cfg.center[1];
+    const lng = cfg.solarLng != null ? Number(cfg.solarLng) : cfg.center[0];
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return 'day';
+
+    let tt;
+    try {
+        const { y, m, d } = getJstYmdParts(now);
+        tt = SunCalc.getTimes(jstCalendarNoonUtcDate(y, m, d), lat, lng);
+    } catch (e) {
+        return 'day';
+    }
+
+    if (!tt?.sunset || !tt?.dawn) return 'day';
+
+    const preMin = Number(cfg.sunsetPreheatMinutes);
+    const preMs = (Number.isFinite(preMin) ? preMin : 45) * 60000;
+    const sunsetStart = tt.sunset.getTime() - preMs;
+
+    const duskKey = cfg.duskBand === 'civil' ? 'dusk' : 'nauticalDusk';
+    const tEveningEnd = tt[duskKey];
+    if (!(tEveningEnd instanceof Date) || isNaN(tEveningEnd.getTime())) return 'day';
+    const eveningEnd = tEveningEnd.getTime();
+
+    const dawn = tt.dawn.getTime();
+    const tMs = now.getTime();
+    if (tMs >= dawn && tMs < sunsetStart) return 'day';
+    if (tMs >= sunsetStart && tMs < eveningEnd) return 'sunset';
+    return 'night';
+}
+
+/** イラスト URL に cacheVersion を付与（blob: / data: はそのまま） */
+function illustrationUrlWithCacheBust(url) {
+    if (!url) return url;
+    const s = String(url);
+    if (s.indexOf('blob:') === 0 || s.indexOf('data:') === 0) return url;
+    const cfg = CONFIG.MAP_IMAGE || {};
+    const v = cfg.cacheVersion != null && cfg.cacheVersion !== ''
+        ? String(cfg.cacheVersion)
+        : String(Date.now());
+    const sep = s.includes('?') ? '&' : '?';
+    return `${s}${sep}v=${encodeURIComponent(v)}`;
+}
+
+/** file:// 用: 画像→canvas→blob URL（未完了時は timeoutMs 後に元 URL で返す） */
+function illustrationImageToBlobUrl(url, timeoutMs) {
+    const fetchUrl = illustrationUrlWithCacheBust(url);
+    const limit = Number(timeoutMs);
+    const ms = Number.isFinite(limit) && limit > 0 ? limit : 12000;
+    return new Promise(resolve => {
+        let settled = false;
+        const finish = (v) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(tid);
+            resolve(v);
+        };
+        const tid = setTimeout(() => {
+            console.warn('[MapModule] illustration blob 化タイムアウト — 元 URL を使用', url);
+            finish(url);
+        }, ms);
+        const img = new Image();
+        img.onload = () => {
+            try {
+                const c = document.createElement('canvas');
+                c.width = img.naturalWidth;
+                c.height = img.naturalHeight;
+                c.getContext('2d').drawImage(img, 0, 0);
+                c.toBlob(blob => finish(blob ? URL.createObjectURL(blob) : url));
+            } catch (e) {
+                finish(url);
+            }
+        };
+        img.onerror = () => finish(url);
+        img.src = fetchUrl;
+    });
+}
+
+// ================================================================
+// MapModule — マップ初期化・イラストマップ表示・GPS
+//   イラスト昼夜夕: MAP_IMAGE + SunCalc。キャッシュは cacheVersion で bust
+// ================================================================
+const MapModule = {
+    _map: null,
+
+    _loaded: false,
+
+    _illustrationTimer:           null,
+    _illustrationVisibilityBound: null,
+
+    init() {
+        mapboxgl.accessToken = CONFIG.MAPBOX_TOKEN;
+        const { center, initZoom, minZoom, maxZoom, maxBounds, bearing = 0, pitch = 0 } = CONFIG.MAP_IMAGE;
+
+        this._map = new mapboxgl.Map({
+            container: 'map',
+            /* 空スタイルは既定で黒背景 → イラスト外周に合わせた background レイヤーを最背面に置く */
+            style: {
+                version: 8,
+                sources: {},
+                layers:  [{
+                    id:     'illustration-sky-bg',
+                    type:   'background',
+                    paint:  { 'background-color': '#A8D8E8' }
+                }]
+            },
+            center:    center,
+            zoom:      initZoom,
+            minZoom:   minZoom,
+            maxZoom:   maxZoom,
+            maxBounds: maxBounds,
+            bearing:   bearing,
+            pitch:     pitch,
+            antialias: true
+        });
+        State.map = this._map;
+
+        const onMapReady = () => {
+            if (this._loaded) return;
+            this._loaded = true;
+
+            try {
+                LayerManager.init(this._map);
+                import('./js/mikoshi-main-map.js')
+                    .then((mod) => mod.attachToMainMap(this._map))
+                    .catch((e) => console.warn('[Mikoshi]', e));
+            } catch (e) {
+                console.error('[MapModule] レイヤー初期化エラー:', e);
+            }
+            DataModule.fetch();
+            DataModule.startPolling();
+            this._startGPS();
+
+            Promise.resolve(this._addIllustrationMap())
+                .catch((e) => {
+                    console.error('[MapModule] イラストレイヤ読込:', e);
+                    return this._addIllustrationMapDayFallback();
+                })
+                .catch((e2) => console.error('[MapModule] イラスト昼フォールバック失敗:', e2));
+        };
+
+        this._map.on('load', onMapReady);
+
+        this._map.on('error', (e) => {
+            console.warn('[MapModule] マップエラー:', e.error?.message || e);
+            if (!this._loaded) onMapReady();
+        });
+
+        setTimeout(() => {
+            if (!this._loaded) {
+                console.warn('[MapModule] load タイムアウト — 強制的にデータ取得を開始');
+                onMapReady();
+            }
+        }, 8000);
+
+        this._map.on('click', () => {
+            UIModule.closePanelOverlay();
+        });
+
+        window.addEventListener('resize', () => {
+            const pc = window.innerWidth >= 768;
+            if (State.isPC !== pc) {
+                State.isPC = pc;
+                if (pc) document.body.classList.remove('cards-sheet-collapsed');
+                setTimeout(() => {
+                    this._map.resize();
+                    if (State.allSpots.length > 0) this.fitBounds();
+                }, 310);
+            }
+        });
+    },
+
+    /** イラスト用 source/layer（day/sunset/night）を取り除く */
+    _removeIllustrationRasterStack() {
+        if (!this._map) return;
+        if (this._illustrationTimer) {
+            clearInterval(this._illustrationTimer);
+            this._illustrationTimer = null;
+        }
+        ['night', 'sunset', 'day'].forEach((key) => {
+            const lid = `illustration-map-layer-${key}`;
+            const sid = `illustration-map-${key}`;
+            try {
+                if (this._map.getLayer(lid)) this._map.removeLayer(lid);
+                if (this._map.getSource(sid)) this._map.removeSource(sid);
+            } catch (e) {
+                console.warn('[MapModule] イラストレイヤ削除:', e);
+            }
+        });
+    },
+
+    /** イラスト image source のロード完了を待つ（再読込時の opacity レース回避） */
+    _waitForIllustrationSources(keys, timeoutMs) {
+        if (!this._map) return Promise.resolve();
+        const limit = Number(timeoutMs);
+        const ms = Number.isFinite(limit) && limit > 0 ? limit : 15000;
+        return new Promise(resolve => {
+            const pending = new Set(keys);
+            let settled = false;
+            const finish = () => {
+                if (settled) return;
+                settled = true;
+                this._map.off('sourcedata', onSource);
+                clearTimeout(tid);
+                resolve();
+            };
+            const onSource = (e) => {
+                if (!e.sourceId || !e.sourceId.startsWith('illustration-map-')) return;
+                const key = e.sourceId.replace('illustration-map-', '');
+                if (!pending.has(key)) return;
+                try {
+                    if (this._map.isSourceLoaded(e.sourceId)) pending.delete(key);
+                } catch (err) {
+                    console.warn('[MapModule] isSourceLoaded:', err);
+                }
+                if (pending.size === 0) finish();
+            };
+            keys.forEach(k => {
+                const sid = `illustration-map-${k}`;
+                try {
+                    if (this._map.getSource(sid) && this._map.isSourceLoaded(sid)) pending.delete(k);
+                } catch (err) { /* source 未追加 */ }
+            });
+            if (pending.size === 0) {
+                resolve();
+                return;
+            }
+            this._map.on('sourcedata', onSource);
+            const tid = setTimeout(() => {
+                if (pending.size > 0) {
+                    console.warn('[MapModule] イラスト source 待ちタイムアウト', [...pending]);
+                }
+                finish();
+            }, ms);
+        });
+    },
+
+    /**
+     * 3 枚スタック失敗時: 昼 1 枚のみ（日周り切替なし）
+     * @returns {Promise<void>}
+     */
+    _addIllustrationMapDayFallback() {
+        const cfg = CONFIG.MAP_IMAGE;
+        const dayUrl = cfg.urlDay || cfg.url;
+        const { coordinates, latOffset = 0, lngOffset = 0 } = cfg;
+        const adjustedCoords = coordinates.map(([lng, lat]) => [lng + lngOffset, lat + latOffset]);
+
+        this._removeIllustrationRasterStack();
+
+        const insertDay = (finalUrl) => {
+            if (this._map.getSource('illustration-map-day')) return Promise.resolve();
+            this._map.addSource('illustration-map-day', {
+                type:        'image',
+                url:         finalUrl,
+                coordinates: adjustedCoords
+            });
+            this._map.addLayer({
+                id:      'illustration-map-layer-day',
+                type:    'raster',
+                source:  'illustration-map-day',
+                paint:   { 'raster-opacity': 1, 'raster-fade-duration': 0 }
+            });
+            return this._waitForIllustrationSources(['day']);
+        };
+
+        if (location.protocol === 'file:') {
+            return illustrationImageToBlobUrl(dayUrl).then((u) => insertDay(u));
+        }
+        return insertDay(illustrationUrlWithCacheBust(dayUrl));
+    },
+
+    /**
+     * 昼・夕・夜の raster を積む。source ready 後にフェーズ切替を開始。
+     * @returns {Promise<void>}
+     */
+    _addIllustrationMap() {
+        const cfg = CONFIG.MAP_IMAGE;
+        if (cfg.dayOnly || !cfg.urlSunset || !cfg.urlNight) {
+            return this._addIllustrationMapDayFallback();
+        }
+        const dayUrl = cfg.urlDay || cfg.url;
+        const sunsetUrl = cfg.urlSunset;
+        const nightUrl = cfg.urlNight;
+        const { coordinates, latOffset = 0, lngOffset = 0 } = cfg;
+        const adjustedCoords = coordinates.map(([lng, lat]) => [lng + lngOffset, lat + latOffset]);
+
+        this._removeIllustrationRasterStack();
+
+        const phaseDefs = [
+            { key: 'day', url: dayUrl },
+            { key: 'sunset', url: sunsetUrl },
+            { key: 'night', url: nightUrl }
+        ];
+
+        const insertStack = resolvedUrls =>
+            new Promise((resolveIllust, rejectIllust) => {
+                try {
+                    const initialPhase = getIllustrationPhase(new Date(), cfg);
+                    phaseDefs.forEach((p, i) => {
+                        const rawUrl = Array.isArray(resolvedUrls) ? resolvedUrls[i] : p.url;
+                        const finalUrl = Array.isArray(resolvedUrls)
+                            ? rawUrl
+                            : illustrationUrlWithCacheBust(rawUrl);
+                        const opacity = p.key === initialPhase ? 1 : 0;
+                        this._map.addSource(`illustration-map-${p.key}`, {
+                            type:        'image',
+                            url:         finalUrl,
+                            coordinates: adjustedCoords
+                        });
+                        this._map.addLayer({
+                            id:      `illustration-map-layer-${p.key}`,
+                            type:    'raster',
+                            source:  `illustration-map-${p.key}`,
+                            paint:   { 'raster-opacity': opacity, 'raster-fade-duration': 0 }
+                        });
+                    });
+                    this._waitForIllustrationSources(phaseDefs.map(p => p.key))
+                        .then(() => {
+                            this._scheduleIllustrationPhase();
+                            resolveIllust();
+                        })
+                        .catch(rejectIllust);
+                } catch (e) {
+                    rejectIllust(e);
+                }
+            });
+
+        if (location.protocol === 'file:') {
+            return Promise.all(phaseDefs.map(p => illustrationImageToBlobUrl(p.url))).then(insertStack);
+        }
+        return insertStack(null);
+    },
+
+    _scheduleIllustrationPhase() {
+        const apply = () => this._applyIllustrationTimePhase();
+        apply();
+        if (this._illustrationTimer) clearInterval(this._illustrationTimer);
+        this._illustrationTimer = setInterval(apply, 45000);
+        if (!this._illustrationVisibilityBound) {
+            this._illustrationVisibilityBound = () => {
+                if (document.visibilityState === 'visible') apply();
+            };
+            document.addEventListener('visibilitychange', this._illustrationVisibilityBound);
+        }
+    },
+
+    _applyIllustrationTimePhase() {
+        if (!this._map) return;
+        const keys = ['day', 'sunset', 'night'];
+        if (!keys.every(k => this._map.getLayer(`illustration-map-layer-${k}`))) return;
+        if (!keys.every(k => {
+            const sid = `illustration-map-${k}`;
+            return this._map.getSource(sid) && this._map.isSourceLoaded(sid);
+        })) return;
+        const phase = getIllustrationPhase(new Date(), CONFIG.MAP_IMAGE);
+        for (const key of keys) {
+            this._map.setPaintProperty(`illustration-map-layer-${key}`, 'raster-opacity', key === phase ? 1 : 0);
+        }
+    },
+
+    fitBounds() {
+        const spotsVisible = LayerManager.getDefs().spots.visible;
+        const targets = spotsVisible
+            ? State.allSpots.filter(s => App._selectedCategories.has(App._effectiveFilterCategorySpot(s)))
+            : [];
+
+        if (targets.length > 0) {
+            const bounds = new mapboxgl.LngLatBounds();
+            targets.forEach(s => bounds.extend(s.coords));
+            const padding = State.isPC
+                ? { top: 80,  bottom: 80,  left: 50, right: 50 }
+                : { top: 80, bottom: 260, left: 30, right: 30 };
+            this._map.fitBounds(bounds, { padding, duration: 800 });
+        } else {
+            const [[w, n], , [e, s]] = CONFIG.MAP_IMAGE.coordinates;
+            const pad = State.isPC ? 30 : { top: 60, bottom: 240, left: 20, right: 20 };
+            this._map.fitBounds([[w, s], [e, n]], { padding: pad, duration: 800 });
+        }
+    },
+
+    flyTo(spot) {
+        const c = spot?.coords;
+        if (!Array.isArray(c) || c.length < 2
+            || !Number.isFinite(Number(c[0])) || !Number.isFinite(Number(c[1]))) {
+            console.warn('[MapModule] flyTo: skip (invalid coords)', spot?.id);
+            return;
+        }
+        const padding = State.isPC
+            ? { top: 50, bottom: 50, left: 50, right: 50 }
+            : { top: 50, bottom: 240, left: 20, right: 20 };
+        this._map.flyTo({ center: spot.coords, zoom: 17, speed: 0.8, padding, essential: true });
+    },
+
+    flyToUser() {
+        if (State.userLocationMarker) {
+            this._map.flyTo({ center: State.userLocationMarker.getLngLat(), zoom: 17 });
+        }
+    },
+
+    _startGPS() {
+        if (!navigator.geolocation) return;
+        navigator.geolocation.watchPosition(
+            pos => {
+                const coords = [pos.coords.longitude, pos.coords.latitude];
+                if (!State.userLocationMarker) {
+                    const el = document.createElement('div');
+                    el.className = 'my-location-marker';
+                    el.innerHTML = '<i class="fas fa-map-marker-alt"></i>';
+                    State.userLocationMarker = new mapboxgl.Marker({ element: el, anchor: 'bottom' })
+                        .setLngLat(coords).addTo(this._map);
+                } else {
+                    State.userLocationMarker.setLngLat(coords);
+                }
+            },
+            err => console.log('[GPS]', err.message),
+            { enableHighAccuracy: true }
+        );
+    }
+};
+
+// ================================================================
+// UIModule — フィルター・レイヤーパネル・マーカー・カード・モーダル・ティッカー
+// ================================================================
+const UIModule = {
+
+    // ---- カテゴリフィルターパネル ----
+
+    generateFilters(spots) {
+        const list = document.getElementById('filter-list');
+        list.innerHTML = '';
+        const cats = App._allFilterCategoryKeys();
+
+        // データに初めて現れたカテゴリは既定で表示ON（ユーザーが外した既存カテゴリはそのまま）
+        App._mergeNewFilterCategories(cats);
+
+        // カテゴリチェックボックス
+        const catTitle = document.createElement('div');
+        catTitle.className = 'ctrl-panel-title';
+        catTitle.textContent = 'カテゴリ';
+        list.appendChild(catTitle);
+
+        const allLabel = document.createElement('label');
+        allLabel.className = 'filter-item';
+        allLabel.innerHTML = `<input type="checkbox" id="filter-all" checked
+            onchange="App.toggleAll(this.checked)">
+            <span class="checkmark"></span>
+            <span class="cat-icon"><i class="fas fa-map"></i></span>
+            <span style="font-weight:bold">${t('all')}</span>`;
+        list.appendChild(allLabel);
+
+        cats.forEach(cat => {
+            const item = document.createElement('label');
+            item.className = 'filter-item';
+            const checked = App._selectedCategories.has(cat) ? 'checked' : '';
+            item.innerHTML = `<input type="checkbox" data-cat="${cat}" ${checked}
+                onchange="App.toggleCategory('${cat}', this.checked)">
+                <span class="checkmark"></span>
+                <span class="cat-icon"><i class="fas ${getCategoryIcon(cat)}"></i></span>
+                <span>${cat}</span>`;
+            list.appendChild(item);
+        });
+
+        // タグフィルター（データにタグがあれば表示）
+        const allTags = [...new Set(
+            spots.flatMap(s => (State.language === 'ja' ? s.tags : s.tags_en) || [])
+        )].filter(Boolean).sort();
+
+        if (allTags.length > 0) {
+            const sep = document.createElement('div');
+            sep.style.cssText = 'height:1px; background:#eee; margin: 8px 0 4px;';
+            list.appendChild(sep);
+
+            const tagTitle = document.createElement('div');
+            tagTitle.className = 'ctrl-panel-title';
+            tagTitle.textContent = t('tags');
+            list.appendChild(tagTitle);
+
+            const chipWrap = document.createElement('div');
+            chipWrap.className = 'tag-filter-chips';
+            allTags.forEach(tag => {
+                const chip = document.createElement('span');
+                chip.className = 'tag-filter-chip' + (State.selectedTags.has(tag) ? ' active' : '');
+                chip.textContent = '#' + tag;
+                chip.dataset.tag = tag;
+                chip.onclick = () => App.toggleTagFilter(tag);
+                chipWrap.appendChild(chip);
+            });
+            list.appendChild(chipWrap);
+        }
+    },
+
+    // ---- レイヤーパネル ----
+
+    renderLayerPanel() {
+        const list = document.getElementById('layer-list');
+        list.innerHTML = '';
+        Object.entries(LayerManager.getDefs()).forEach(([id, def]) => {
+            const name = State.language === 'ja' ? def.name : def.name_en;
+            const item = document.createElement('div');
+            item.className = 'layer-item';
+            item.innerHTML = `
+                <span class="layer-icon" style="background:${def.color}22; color:${def.color}">${def.icon}</span>
+                <span class="layer-label">${name}</span>
+                <label class="toggle-switch" onclick="event.stopPropagation()">
+                    <input type="checkbox" ${def.visible ? 'checked' : ''}
+                        onchange="LayerManager.toggle('${id}')">
+                    <span class="toggle-track"></span>
+                </label>`;
+            list.appendChild(item);
+        });
+    },
+
+    onTabTap(tabName) {
+        if (State.isPC) {
+            if (tabName === 'filter') this.togglePanel('filter-panel');
+            else if (tabName === 'layer') this.togglePanel('layer-panel');
+            else if (tabName === 'lang') App.toggleLanguage();
+            return;
+        }
+        if (tabName === 'home') {
+            this.closePanelOverlay();
+            MapModule.fitBounds();
+            this._setActiveTab('tab-home');
+        } else if (tabName === 'filter') {
+            this.togglePanel('filter-panel');
+            this._setActiveTab('tab-filter');
+        } else if (tabName === 'layer') {
+            this.togglePanel('layer-panel');
+            this._setActiveTab('tab-layer');
+        } else if (tabName === 'lang') {
+            this.closePanelOverlay();
+            App.toggleLanguage();
+            this._setActiveTab('tab-lang');
+            setTimeout(() => this._setActiveTab('tab-home'), 600);
+        }
+    },
+
+    _setActiveTab(activeId) {
+        document.querySelectorAll('#controls-container .ctrl-btn').forEach(btn => {
+            btn.classList.toggle('tab-active', btn.id === activeId);
+        });
+    },
+
+    togglePanel(id) {
+        const target = document.getElementById(id);
+        const isOpen = target.classList.contains('open');
+        document.querySelectorAll('.ctrl-panel').forEach(p => p.classList.remove('open'));
+        const overlay = document.getElementById('ctrl-panel-overlay');
+        if (!isOpen) {
+            target.classList.add('open');
+            if (!State.isPC && overlay) overlay.classList.add('open');
+        } else {
+            if (overlay) overlay.classList.remove('open');
+            if (!State.isPC) this._setActiveTab('tab-home');
+        }
+    },
+
+    closePanelOverlay() {
+        document.querySelectorAll('.ctrl-panel').forEach(p => p.classList.remove('open'));
+        const overlay = document.getElementById('ctrl-panel-overlay');
+        if (overlay) overlay.classList.remove('open');
+        if (!State.isPC) this._setActiveTab('tab-home');
+    },
+
+    // サイドバーの折りたたみ／展開 (PC のみ有効)
+    toggleSidebar() {
+        document.body.classList.toggle('sidebar-collapsed');
+        setTimeout(() => { if (MapModule._map) MapModule._map.resize(); }, 310);
+    },
+
+    /** モバイル: 下部カードシートの折りたたみ（PCでは無効） */
+    toggleCardsSheet() {
+        if (State.isPC) return;
+        document.body.classList.toggle('cards-sheet-collapsed');
+        const btn = document.getElementById('card-panel-handle');
+        if (btn) {
+            const collapsed = document.body.classList.contains('cards-sheet-collapsed');
+            btn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+            btn.setAttribute('aria-label', collapsed ? '店舗一覧を表示' : '店舗カードを隠す');
+        }
+        setTimeout(() => { if (MapModule._map) MapModule._map.resize(); }, 380);
+    },
+
+    expandCardsSheetIfCollapsed() {
+        if (State.isPC) return;
+        if (!document.body.classList.contains('cards-sheet-collapsed')) return;
+        document.body.classList.remove('cards-sheet-collapsed');
+        const btn = document.getElementById('card-panel-handle');
+        if (btn) {
+            btn.setAttribute('aria-expanded', 'true');
+            btn.setAttribute('aria-label', '店舗カードを隠す');
+        }
+        setTimeout(() => { if (MapModule._map) MapModule._map.resize(); }, 380);
+    },
+
+    // ---- マーカー ----
+
+    updateMarkers(spots) {
+        State.activeMarkers.forEach(m => m.remove());
+        State.liveMarkers.forEach(m => m.remove());
+        State.scheduleMarkers.forEach(m => m.remove());
+        State.activeMarkers = [];
+        State.liveMarkers = [];
+        State.scheduleMarkers = [];
+
+        const spotsVisible = LayerManager.getDefs().spots.visible;
+
+        spots.forEach(spot => {
+            const si = getStatusInfo(spot.status);
+            const el = document.createElement('div');
+            el.className = 'custom-marker';
+            el.id = `marker-${spot.id}`;
+            if (!spotsVisible) el.style.display = 'none';
+
+            const inner = document.createElement('div');
+            inner.className = 'marker-inner floating';
+            inner.style.borderColor = si.color;
+
+            const clip = document.createElement('div');
+            clip.className = 'marker-clip';
+
+            const emoji = document.createElement('span');
+            emoji.className = 'marker-emoji';
+            emoji.innerText = spot.emoji;
+            clip.appendChild(emoji);
+
+            if (spot.imageUrl) {
+                const img = new Image();
+                img.src = spot.imageUrl;
+                img.className = 'marker-image';
+                img.style.display = 'none';
+                img.onload = () => { img.style.display = 'block'; emoji.style.display = 'none'; };
+                clip.appendChild(img);
+            }
+            inner.appendChild(clip);
+
+            if (spot.status) {
+                const badge = document.createElement('div');
+                badge.className = 'status-badge';
+                badge.style.cssText = `background:${si.color}; display:block;`;
+                inner.appendChild(badge);
+            }
+            if (spot.livePost) {
+                inner.style.borderColor = LIVE_RING_COLOR_STORE;
+                inner.style.boxShadow = '0 4px 10px rgba(33,150,243,0.4)';
+                inner.classList.remove('floating');
+                const pin = document.createElement('div');
+                pin.className = 'marker-pin marker-pin--floating';
+                const stem = document.createElement('div');
+                stem.className = 'marker-pin-stem';
+                stem.style.setProperty('--stem-color', LIVE_RING_COLOR_STORE);
+                pin.appendChild(inner);
+                pin.appendChild(stem);
+                const liveBadge = document.createElement('div');
+                liveBadge.className = 'marker-live-badge';
+                liveBadge.textContent = 'LIVE';
+                el.classList.add('custom-marker--live-pin');
+                el.appendChild(liveBadge);
+                el.appendChild(pin);
+            } else {
+                inner.classList.add('floating');
+                if (val(spot, 'news')) {
+                    const nb = document.createElement('div');
+                    nb.className = 'marker-news-badge';
+                    nb.innerHTML = '<i class="fas fa-bullhorn"></i>';
+                    el.appendChild(nb);
+                }
+                el.appendChild(inner);
+            }
+            el.addEventListener('click', e => { e.stopPropagation(); App.selectSpot(spot); });
+
+            const marker = new mapboxgl.Marker({ element: el, anchor: 'bottom' })
+                .setLngLat(spot.coords).addTo(MapModule._map);
+            State.activeMarkers.push(marker);
+        });
+
+        /* 運営スポット / GPS の独立ピン */
+        (State.liveStandalonePosts || []).forEach(lp => {
+            if (!spotsVisible || lp.lat == null || lp.lng == null) return;
+            if (!App._standaloneLiveVisible(lp)) return;
+            const clr = LIVE_MARKER_COLOR_BY_ROLE[lp.role] || '#666';
+
+            const el = document.createElement('div');
+            el.className = 'live-standalone-marker custom-marker custom-marker--live-pin';
+            const wrap = document.createElement('div');
+            wrap.className = 'marker-inner-livepost';
+            wrap.style.borderColor = clr;
+            wrap.style.borderStyle = 'solid';
+
+            if (lp.imageUrl) {
+                const img = document.createElement('img');
+                img.src = lp.imageUrl;
+                img.alt = '';
+                img.style.cssText = 'width:100%;height:100%;object-fit:cover;border-radius:50%;';
+                img.onerror = () => {
+                    wrap.innerHTML = '<span style="font-size:20px;">📍</span>';
+                };
+                wrap.appendChild(img);
+            } else {
+                wrap.innerHTML = '<span style="font-size:22px;">📍</span>';
+            }
+
+            const pin = document.createElement('div');
+            pin.className = 'marker-pin marker-pin--floating';
+
+            const stem = document.createElement('div');
+            stem.className = 'marker-pin-stem';
+            stem.style.setProperty('--stem-color', clr);
+
+            pin.appendChild(wrap);
+            pin.appendChild(stem);
+
+            const badge = document.createElement('div');
+            badge.className = 'marker-live-badge';
+            badge.style.background = clr;
+            badge.textContent = 'LIVE';
+
+            el.appendChild(badge);
+            el.appendChild(pin);
+
+            const msgShort = lp.message ? escapeHtml(lp.message.substring(0, 80)) : '';
+            const imgHtml = lp.imageUrl
+                ? `<img src="${escapeHtml(lp.imageUrl)}" alt="" style="max-width:220px;border-radius:8px;margin-top:6px"/>`
+                : '';
+            const popupHtml = `<div style="max-width:240px;font-size:13px;line-height:1.4">
+                <div style="font-weight:bold;color:${clr}">${escapeHtml(lp.category || '')} · ${liveRoleJa(lp.role)}</div>
+                <div style="font-size:11px;color:#888;margin-top:2px">${timeAgo(lp.timestamp)}</div>
+                ${msgShort ? `<div style="margin-top:6px">${msgShort}</div>` : ''}
+                ${imgHtml}
+            </div>`;
+
+            const marker = new mapboxgl.Marker({ element: el, anchor: 'bottom' })
+                .setLngLat([Number(lp.lng), Number(lp.lat)])
+                .setPopup(new mapboxgl.Popup({ offset: 28 }).setHTML(popupHtml))
+                .addTo(MapModule._map);
+
+            State.liveMarkers.push(marker);
+        });
+
+        /* 祭スケジュール ピン（レイヤーOFFでも DOM は生成し display で切替／toggle と整合） */
+        const eventsVisible = LayerManager.getDefs().events?.visible;
+        const nowEv = Date.now();
+        EventScheduleModule.visible(nowEv).forEach(ev => {
+                const isUpcoming = nowEv < ev.startAt.getTime();
+                const accentColor = '#F57C00';
+
+                const el = document.createElement('div');
+                el.className = 'custom-marker';
+                el.id = `ev-marker-${ev.id}`;
+                if (!eventsVisible) el.style.display = 'none';
+
+                const inner = document.createElement('div');
+                inner.className = 'marker-inner floating';
+                inner.style.borderColor = accentColor;
+
+                const clip = document.createElement('div');
+                clip.className = 'marker-clip';
+
+                if (ev.imageUrl) {
+                    const imgPin = document.createElement('img');
+                    imgPin.className = 'marker-image';
+                    imgPin.alt = '';
+                    imgPin.referrerPolicy = 'no-referrer';
+                    imgPin.src = ev.imageUrl;
+                    imgPin.onerror = function () {
+                        try { this.remove(); } catch (ex) {}
+                    };
+                    clip.appendChild(imgPin);
+                }
+
+                const emoji = document.createElement('span');
+                emoji.className = 'marker-emoji';
+                emoji.innerText = ev.emoji;
+                clip.appendChild(emoji);
+                inner.appendChild(clip);
+
+                if (isUpcoming) {
+                    const badge = document.createElement('div');
+                    badge.className = 'marker-news-badge';
+                    badge.style.background = accentColor;
+                    badge.innerHTML = '<i class="fas fa-clock"></i>';
+                    el.appendChild(badge);
+                }
+
+                el.appendChild(inner);
+
+                const title  = State.language === 'ja' ? ev.title : ev.titleEn;
+                const startFmt = ev.startAt.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+                const endFmt   = ev.endAt.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+                const statusText = isUpcoming
+                    ? `<span style="color:${accentColor};font-weight:bold;">まもなく開始</span>`
+                    : `<span style="color:#2E7D32;font-weight:bold;">開催中</span>`;
+                const imgHtml = ev.imageUrl
+                    ? `<div style="margin-top:8px"><img src="${escapeHtml(ev.imageUrl)}" alt="" referrerpolicy="no-referrer" style="max-width:100%;width:100%;max-height:200px;object-fit:cover;border-radius:8px;display:block" onerror="this.style.display='none'"/></div>`
+                    : '';
+                const popupHtml = `<div style="max-width:240px;font-size:13px;line-height:1.5">
+                    <div style="font-size:20px;text-align:center;margin-bottom:4px">${ev.emoji}</div>
+                    ${imgHtml}
+                    <div style="font-weight:bold;font-size:14px">${escapeHtml(title)}</div>
+                    <div style="font-size:11px;color:#666;margin-top:2px">${startFmt} – ${endFmt}</div>
+                    <div style="margin-top:4px">${statusText}</div>
+                </div>`;
+
+                const schedMarker = new mapboxgl.Marker({ element: el, anchor: 'bottom' })
+                    .setLngLat(ev.coords)
+                    .setPopup(new mapboxgl.Popup({ offset: 28 }).setHTML(popupHtml))
+                    .addTo(MapModule._map);
+
+                State.scheduleMarkers.push(schedMarker);
+            });
+    },
+
+    // ---- カードパネル ----
+
+    renderCards(spots) {
+        const container = document.getElementById('slide-panel');
+        container.innerHTML = '';
+        if (spots.length === 0) {
+            container.innerHTML = `<div style="padding:20px; color:#555;">${t('noData')}</div>`;
+            return;
+        }
+        spots.forEach(spot => {
+            const card = document.createElement('div');
+            card.className = 'slide-card';
+            card.id = `card-${spot.id}`;
+            card.onclick = () => App.selectSpot(spot);
+
+            const si = getStatusInfo(spot.status);
+            const newsVal = val(spot, 'news');
+            const hoursText = val(spot, 'hours');
+
+            const thumbHtml = spot.imageUrl
+                ? `<img src="${spot.imageUrl}" class="card-thumb"
+                    onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">`
+                : '';
+            const placeholder = `<div class="card-emoji-placeholder"
+                style="${spot.imageUrl ? 'display:none' : ''}">${spot.emoji}</div>`;
+
+            const indParts = [];
+            if (spot.status) {
+                indParts.push(`<span class="card-ind card-ind--status" style="background:${si.bg};box-shadow:0 0 0 2px rgba(255,255,255,0.95)" title="${escapeHtml(spot.status)}" role="img" aria-label="${escapeHtml(spot.status)}"></span>`);
+            }
+            if (newsVal) {
+                indParts.push(`<span class="card-ind card-ind--news" title="${escapeHtml(newsVal)}" aria-label="お知らせ"><i class="fas fa-bullhorn" aria-hidden="true"></i></span>`);
+            }
+            if (hoursText) {
+                indParts.push(`<span class="card-ind card-ind--hours" title="${escapeHtml(hoursText)}" aria-label="営業時間"><i class="fas fa-clock" aria-hidden="true"></i></span>`);
+            }
+            if (spot.livePost) {
+                indParts.push(`<span class="card-ind card-ind--live-tag" title="LIVE投稿"><span class="live-badge live-badge--card-top">LIVE</span></span>`);
+            }
+            const indicatorsHtml = indParts.length
+                ? `<div class="card-image-indicators">${indParts.join('')}</div>`
+                : '';
+
+            const detailLines = [];
+            if (spot.status) {
+                detailLines.push(`<div class="card-detail-line"><span class="card-status--compact" style="background:${si.bg};color:${si.text}">${spot.status}</span></div>`);
+            }
+            if (newsVal) {
+                detailLines.push(`<div class="card-detail-line card-detail-news-text"><i class="fas fa-bullhorn"></i> ${newsVal}</div>`);
+            }
+            if (hoursText) {
+                detailLines.push(`<div class="card-detail-line card-detail-hours"><i class="fas fa-clock"></i> ${hoursText}</div>`);
+            }
+            const detailHtml = detailLines.length
+                ? `<div class="card-detail-block">${detailLines.join('')}</div>`
+                : '';
+
+            const spotTags = (State.language === 'ja' ? spot.tags : spot.tags_en) || [];
+            const tagsHtml = spotTags.length
+                ? `<div class="tag-chips">${spotTags.slice(0, 3).map(tag =>
+                    `<span class="tag-chip${State.selectedTags.has(tag) ? ' active' : ''}"
+                        onclick="event.stopPropagation(); App.toggleTagFilter('${tag.replace(/'/g, '\\\'')}')">#${tag}</span>`
+                  ).join('')}</div>`
+                : '';
+
+            let livePostHtml = '';
+            if (spot.livePost) {
+                const lp = spot.livePost;
+                const timeStr = timeAgo(lp.timestamp);
+                const safeMsg = lp.message
+                    ? lp.message.substring(0, 52).replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                    : (lp.imageUrl ? '📸 画像あり（詳細で表示）' : '');
+                const cat = lp.category ? escapeHtml(lp.category) : '';
+                livePostHtml = `<div class="card-live-post card-live-post--compact">
+                    <div class="card-live-compact-meta">
+                        ${cat ? `<span class="card-live-cat">${cat}</span>` : ''}
+                        <span class="card-live-time">${timeStr}</span>
+                    </div>
+                    ${safeMsg ? `<div class="card-live-message">${safeMsg}</div>` : ''}
+                </div>`;
+            }
+
+            card.innerHTML = `
+                <div class="card-image-area">${thumbHtml}${placeholder}${indicatorsHtml}</div>
+                <div class="card-info">
+                    <div class="card-info-main">
+                        <div class="card-title">${val(spot, 'name')}</div>
+                        ${detailHtml}
+                        ${tagsHtml}
+                        ${livePostHtml}
+                    </div>
+                    <div class="card-arrow" role="button" aria-label="詳細">
+                        <i class="fas fa-arrow-right"></i>
+                    </div>
+                </div>`;
+            const arrowEl = card.querySelector('.card-arrow');
+            if (arrowEl) {
+                arrowEl.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    UIModule.openModal(spot.id);
+                });
+            }
+            container.appendChild(card);
+        });
+    },
+
+    highlightCard(spot) {
+        document.querySelectorAll('.slide-card').forEach(c => c.classList.remove('active'));
+        const target = document.getElementById(`card-${spot.id}`);
+        if (!target) return;
+        target.classList.add('active');
+        const container = document.getElementById('slide-panel');
+        if (State.isPC) {
+            container.scrollTo({ top: target.offsetTop - container.offsetTop, behavior: 'smooth' });
+        } else {
+            container.scrollTo({
+                left: target.offsetLeft - (container.clientWidth / 2) + (target.offsetWidth / 2),
+                behavior: 'smooth'
+            });
+        }
+    },
+
+    // ---- ニュースティッカー ----
+
+    /**
+     * ティッカーに表示するアイテムリストを構築して返す
+     *
+     * 優先順: LIVE投稿（新しい順）→ 通常news
+     * 各要素:
+     *   { type:'live'|'news', spot, text, imageUrl, timeStr }
+     */
+    _buildTickerList() {
+        const liveItems = [];
+
+        State.allSpots
+            .filter(s => s.livePost)
+            .filter(s => App._selectedCategories.has(
+                s.livePost.category ? s.livePost.category : val(s, 'category')
+            ))
+            .forEach(spot => {
+                const lp = spot.livePost;
+                liveItems.push({
+                    type:     'live',
+                    spot,
+                    text:     lp.message || '（画像投稿）',
+                    imageUrl: lp.imageUrl || '',
+                    timeStr:  timeAgo(lp.timestamp),
+                    sortKey:  lp.timestamp.getTime()
+                });
+            });
+
+        (State.liveStandalonePosts || [])
+            .filter(lp => App._standaloneLiveVisible(lp))
+            .forEach(lp => {
+            liveItems.push({
+                type:     'live_map',
+                post:     lp,
+                text:     lp.message || '（画像投稿）',
+                imageUrl: lp.imageUrl || '',
+                timeStr:  timeAgo(lp.timestamp),
+                sortKey:  lp.timestamp.getTime()
+            });
+        });
+
+        liveItems.sort((a, b) => (b.sortKey || 0) - (a.sortKey || 0));
+
+        const newsItems = [];
+        State.allSpots
+            .filter(s => val(s, 'news'))
+            .forEach(spot => {
+                newsItems.push({
+                    type:     'news',
+                    spot,
+                    text:     val(spot, 'news'),
+                    imageUrl: '',
+                    timeStr:  ''
+                });
+            });
+
+        return liveItems.concat(newsItems);
+    },
+
+    startTicker() {
+        State.tickerList = this._buildTickerList();
+        if (State.tickerList.length === 0) {
+            document.getElementById('news-ticker-wrapper').style.display = 'none';
+            return;
+        }
+        document.getElementById('news-ticker-wrapper').style.display = 'flex';
+        State.currentNewsIndex = 0;
+        this._updateTickerText();
+        clearInterval(State.newsInterval);
+        State.newsInterval = setInterval(() => {
+            State.currentNewsIndex = (State.currentNewsIndex + 1) % State.tickerList.length;
+            this._updateTickerText();
+        }, 5000);
+    },
+
+    _updateTickerText() {
+        const list  = State.tickerList;
+        if (!list || list.length === 0) return;
+        const item  = list[State.currentNewsIndex];
+        if (!item) return;
+
+        const ticker   = document.getElementById('news-ticker');
+        const iconArea = document.getElementById('ticker-icon-area');
+        const thumb    = document.getElementById('ticker-live-thumb');
+        const textEl   = document.getElementById('ticker-text');
+        const spotEl   = document.getElementById('ticker-spot');
+        const cntEl    = document.getElementById('ticker-counter');
+
+        // フェードアウト
+        textEl.style.opacity = spotEl.style.opacity = '0';
+
+        setTimeout(() => {
+            if (item.type === 'live' || item.type === 'live_map') {
+                ticker.classList.add('live-mode');
+                iconArea.innerHTML = '<span class="ticker-live-dot"></span>';
+
+                if (item.imageUrl) {
+                    thumb.src = item.imageUrl;
+                    thumb.style.display = 'block';
+                    thumb._liveUrl = item.imageUrl;
+                    const brd = item.type === 'live_map'
+                        ? (LIVE_MARKER_COLOR_BY_ROLE[item.post.role] || '#FF3B6B')
+                        : '#2196F3';
+                    thumb.style.borderColor = brd;
+                } else {
+                    thumb.style.display = 'none';
+                }
+                textEl.innerText = item.text;
+                if (item.type === 'live') {
+                    spotEl.innerHTML =
+                        `<span style="color:#2196F3; font-weight:bold;">LIVE</span> @${val(item.spot, 'name')} · ${item.timeStr}`;
+                } else {
+                    const lp = item.post;
+                    const c = LIVE_MARKER_COLOR_BY_ROLE[lp.role] || '#666';
+                    spotEl.innerHTML =
+                        `<span style="color:${c}; font-weight:bold;">LIVE</span> ${escapeHtml(lp.category || '')} · ${liveRoleJa(lp.role)} · ${item.timeStr}`;
+                }
+
+            } else {
+                // 通常ニュースモード
+                ticker.classList.remove('live-mode');
+                iconArea.innerHTML = '<i class="fas fa-bullhorn"></i>';
+                thumb.style.display = 'none';
+                textEl.innerText = item.text;
+                spotEl.innerText = `@${val(item.spot, 'name')}`;
+            }
+
+            cntEl.innerText = `${State.currentNewsIndex + 1}/${list.length}`;
+            textEl.style.opacity = spotEl.style.opacity = '1';
+        }, 280);
+    },
+
+    // サムネクリック → ライトボックス
+    _onTickerThumbClick() {
+        const thumb = document.getElementById('ticker-live-thumb');
+        if (thumb?._liveUrl) this.openLightbox(thumb._liveUrl);
+    },
+
+    openNewsList() {
+        document.getElementById('news-list-title').innerText = t('newsListTitle');
+        const body = document.getElementById('news-list-content');
+        body.innerHTML = '';
+
+        const list = State.tickerList || this._buildTickerList();
+
+        if (list.length === 0) {
+            body.innerHTML = '<div style="padding:20px; color:#888; text-align:center;">お知らせはありません</div>';
+            document.getElementById('news-list-overlay').classList.add('open');
+            return;
+        }
+
+        list.forEach(item => {
+            const div = document.createElement('div');
+            div.className = 'news-item';
+
+            if (item.type === 'live') {
+                div.onclick = () => { App.selectSpot(item.spot); this.closeNewsList(null, true); };
+                const safeUrl = item.imageUrl ? item.imageUrl.replace(/'/g, '%27') : '';
+                const thumbHtml = item.imageUrl
+                    ? `<img src="${item.imageUrl}" class="news-item-live-thumb"
+                           onclick="event.stopPropagation(); UIModule.openLightbox('${safeUrl}')"
+                           onerror="this.style.display='none'">`
+                    : `<div class="news-item-icon news-item-type-live"><i class="fas fa-circle" style="font-size:10px;"></i></div>`;
+                div.innerHTML = `
+                    ${thumbHtml}
+                    <div style="flex:1; min-width:0;">
+                        <div style="display:flex; align-items:center; gap:6px; margin-bottom:3px;">
+                            <span class="live-badge">● LIVE</span>
+                            <span style="font-size:11px; font-weight:bold; color:#333; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${val(item.spot, 'name')}</span>
+                        </div>
+                        <div style="font-size:13px; color:#444; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(item.text)}</div>
+                        <div class="news-item-time">${item.timeStr}</div>
+                    </div>`;
+            } else if (item.type === 'live_map') {
+                const lp = item.post;
+                div.onclick = () => {
+                    if (MapModule._map && lp.lng != null && lp.lat != null) {
+                        MapModule._map.flyTo({
+                            center: [Number(lp.lng), Number(lp.lat)],
+                            zoom: Math.max(MapModule._map.getZoom(), 15.8),
+                            speed: 0.85
+                        });
+                    }
+                    this.closeNewsList(null, true);
+                };
+                const safeUrl = item.imageUrl ? item.imageUrl.replace(/'/g, '%27') : '';
+                const thumbHtml = item.imageUrl
+                    ? `<img src="${item.imageUrl}" class="news-item-live-thumb"
+                           style="border-color:${LIVE_MARKER_COLOR_BY_ROLE[lp.role] || '#666'}"
+                           onclick="event.stopPropagation(); UIModule.openLightbox('${safeUrl}')"
+                           onerror="this.style.display='none'">`
+                    : `<div class="news-item-icon news-item-type-live"><i class="fas fa-circle" style="font-size:10px;"></i></div>`;
+                const title = `${escapeHtml(lp.category || '')} · ${escapeHtml(liveRoleJa(lp.role))}`;
+                div.innerHTML = `
+                    ${thumbHtml}
+                    <div style="flex:1; min-width:0;">
+                        <div style="display:flex; align-items:center; gap:6px; margin-bottom:3px;">
+                            <span class="live-badge">● LIVE</span>
+                            <span style="font-size:11px; font-weight:bold; color:#333; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${title}</span>
+                        </div>
+                        <div style="font-size:13px; color:#444; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(item.text)}</div>
+                        <div class="news-item-time">${item.timeStr}</div>
+                    </div>`;
+            } else {
+                div.onclick = () => { App.selectSpot(item.spot); this.closeNewsList(null, true); };
+                div.innerHTML = `
+                    <div class="news-item-icon"><i class="fas fa-bullhorn"></i></div>
+                    <div style="flex:1; min-width:0;">
+                        <div style="font-weight:bold; margin-bottom:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(item.text)}</div>
+                        <div style="font-size:12px; color:#888;">@${val(item.spot, 'name')}</div>
+                    </div>`;
+            }
+            body.appendChild(div);
+        });
+
+        document.getElementById('news-list-overlay').classList.add('open');
+    },
+
+    closeNewsList(e, force) {
+        if (force || e?.target?.id === 'news-list-overlay')
+            document.getElementById('news-list-overlay').classList.remove('open');
+    },
+
+    // ---- 詳細モーダル ----
+
+    openModal(spotId) {
+        const spot = State.allSpots.find(s => s.id === spotId);
+        if (!spot) return;
+        State.currentSpot = spot;
+
+        const images = [spot.imageUrl, spot.imageUrl2, spot.imageUrl3].filter(Boolean);
+        UIModule._buildSlider(images, spot.emoji);
+
+        document.getElementById('modal-cat').innerText   = val(spot, 'category');
+        document.getElementById('modal-title').innerText = val(spot, 'name');
+
+        // 営業時間
+        const hoursText = val(spot, 'hours');
+        const hoursWrap = document.getElementById('modal-hours-wrap');
+        if (hoursText) {
+            hoursWrap.style.display = 'flex';
+            document.getElementById('modal-hours').textContent = hoursText;
+        } else {
+            hoursWrap.style.display = 'none';
+        }
+
+        // タグ
+        const tagsEl = document.getElementById('modal-tags');
+        tagsEl.innerHTML = '';
+        const spotTags = (State.language === 'ja' ? spot.tags : spot.tags_en) || [];
+        spotTags.forEach(tag => {
+            const chip = document.createElement('span');
+            chip.className = 'tag-chip' + (State.selectedTags.has(tag) ? ' active' : '');
+            chip.textContent = '#' + tag;
+            chip.onclick = () => App.toggleTagFilter(tag);
+            tagsEl.appendChild(chip);
+        });
+
+        const addrText = val(spot, 'address');
+        const phoneText = val(spot, 'phone');
+        const contactEl = document.getElementById('modal-contact');
+        const addrWrap = document.getElementById('modal-address-wrap');
+        const phoneWrap = document.getElementById('modal-phone-wrap');
+        const phoneLink = document.getElementById('modal-phone-link');
+        if (addrText || phoneText) {
+            contactEl.style.display = 'block';
+        } else {
+            contactEl.style.display = 'none';
+        }
+        if (addrText) {
+            addrWrap.style.display = 'flex';
+            document.getElementById('modal-address').textContent = addrText;
+        } else {
+            addrWrap.style.display = 'none';
+        }
+        if (phoneText) {
+            phoneWrap.style.display = 'flex';
+            phoneLink.textContent = phoneText;
+            const telNorm = phoneText.replace(/[^\d+]/g, '');
+            if (telNorm.length >= 8) {
+                phoneLink.href = 'tel:' + telNorm;
+                phoneLink.style.pointerEvents = 'auto';
+            } else {
+                phoneLink.removeAttribute('href');
+                phoneLink.style.pointerEvents = 'none';
+            }
+        } else {
+            phoneWrap.style.display = 'none';
+        }
+        // ライブ投稿セクション
+        const livePostEl = document.getElementById('modal-live-post');
+        if (spot.livePost) {
+            const lp = spot.livePost;
+            const timeStr = timeAgo(lp.timestamp);
+            const safeUrl = lp.imageUrl ? lp.imageUrl.replace(/'/g, '%27') : '';
+            const imgHtml = lp.imageUrl
+                ? `<img src="${lp.imageUrl}" class="modal-live-image"
+                    onclick="UIModule.openLightbox('${safeUrl}')"
+                    onerror="this.style.display='none'">`
+                : '';
+            const safeMsg = lp.message
+                ? lp.message.replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                : '';
+            const cat = lp.category ? escapeHtml(lp.category) : '';
+            const roleLine = lp.role ? ` · ${escapeHtml(liveRoleJa(lp.role))}` : '';
+            livePostEl.innerHTML = `
+                <div class="modal-live-post-header">
+                    <span class="live-badge">● LIVE</span>
+                    <span class="modal-live-time">${timeStr}</span>
+                </div>
+                ${cat ? `<div style="font-size:13px;font-weight:bold;color:#1565C0;margin-bottom:6px">${cat}${roleLine}</div>` : ''}
+                ${imgHtml}
+                ${safeMsg ? `<div class="modal-live-message">${safeMsg}</div>` : ''}`;
+            livePostEl.style.display = 'block';
+        } else {
+            livePostEl.style.display = 'none';
+            livePostEl.innerHTML = '';
+        }
+
+        document.getElementById('modal-text').innerText  = val(spot, 'detail') || val(spot, 'desc') || '';
+        document.getElementById('btn-nav-text').innerText = t('go');
+        document.getElementById('modal-nav-btn').href =
+            `https://www.google.com/maps/dir/?api=1&destination=${spot.coords[1]},${spot.coords[0]}`;
+
+        document.getElementById('btn-coupon-text').innerText = t('coupon');
+        document.getElementById('modal-coupon-btn').style.display = val(spot, 'coupon') ? 'block' : 'none';
+
+        document.getElementById('modal-overlay').classList.add('open');
+        gtag('event', 'view_item', { item_id: spot.name });
+    },
+
+    closeModal(e, force) {
+        if (force || e?.target?.id === 'modal-overlay')
+            document.getElementById('modal-overlay').classList.remove('open');
+    },
+
+    showCoupon() {
+        const spot = State.currentSpot;
+        if (!spot || !val(spot, 'coupon')) return;
+        document.getElementById('coupon-text').innerText = val(spot, 'coupon');
+        document.getElementById('coupon-overlay').classList.add('open');
+        gtag('event', 'use_coupon', { item_id: spot.name });
+    },
+
+    closeCoupon(e, force) {
+        if (force || e?.target?.id === 'coupon-overlay')
+            document.getElementById('coupon-overlay').classList.remove('open');
+    },
+
+    // ---- 画像スライダー (詳細モーダル) ----
+
+    _sliderImages: [],
+    _sliderIndex:  0,
+
+    _buildSlider(images, emoji) {
+        const track = document.getElementById('modal-slider-track');
+        const dots  = document.getElementById('slider-dots');
+        const prev  = document.getElementById('slider-prev');
+        const next  = document.getElementById('slider-next');
+        if (!track) return;
+        track.innerHTML = dots.innerHTML = '';
+        this._sliderImages = images;
+        this._sliderIndex  = 0;
+
+        if (images.length === 0) {
+            track.innerHTML = `<div class="modal-slider-empty">${emoji}</div>`;
+            prev.classList.add('hidden');
+            next.classList.add('hidden');
+            return;
+        }
+        images.forEach((url, i) => {
+            const img = document.createElement('img');
+            img.src = url;
+            img.className = 'modal-slide-img';
+            img.alt = '';
+            img.onerror = () => { img.style.opacity = '0'; };
+            track.appendChild(img);
+
+            const dot = document.createElement('button');
+            dot.className = 'slider-dot' + (i === 0 ? ' active' : '');
+            dot.onclick = () => this._goToSlide(i);
+            dots.appendChild(dot);
+        });
+        prev.classList.toggle('hidden', images.length <= 1);
+        next.classList.toggle('hidden', images.length <= 1);
+        this._updateSlider();
+    },
+
+    sliderNav(dir) {
+        const len = this._sliderImages.length;
+        if (len <= 1) return;
+        this._sliderIndex = (this._sliderIndex + dir + len) % len;
+        this._updateSlider();
+    },
+
+    _goToSlide(i) {
+        this._sliderIndex = i;
+        this._updateSlider();
+    },
+
+    _updateSlider() {
+        const track = document.getElementById('modal-slider-track');
+        if (track) track.style.transform = `translateX(-${this._sliderIndex * 100}%)`;
+        document.querySelectorAll('#slider-dots .slider-dot').forEach((d, i) => {
+            d.classList.toggle('active', i === this._sliderIndex);
+        });
+    },
+
+    // ---- ライトボックス (LIVE画像拡大) ----
+
+    openLightbox(url) {
+        const overlay = document.getElementById('lightbox-overlay');
+        const img = document.getElementById('lightbox-img');
+        if (!overlay || !img) return;
+        img.src = url;
+        overlay.classList.add('open');
+    },
+
+    closeLightbox() {
+        const overlay = document.getElementById('lightbox-overlay');
+        const img = document.getElementById('lightbox-img');
+        if (overlay) overlay.classList.remove('open');
+        if (img) img.src = '';
+    }
+};
+
+// ================================================================
+// App — エントリポイント・イベント連携
+// ================================================================
+const App = {
+    _selectedCategories: new Set(),
+    _seenFilterCategories: new Set(),
+    _postsInitialized: false,
+
+    /** 絞り込み判定: 店舗は LIVE 投稿のカテゴリを優先、なければマスタのカテゴリ */
+    _effectiveFilterCategorySpot(spot) {
+        if (spot.livePost && spot.livePost.category) return spot.livePost.category;
+        return val(spot, 'category');
+    },
+
+    _standaloneLiveVisible(lp) {
+        const c = lp.category;
+        if (!c) return true;
+        return this._selectedCategories.has(c);
+    },
+
+    _allFilterCategoryKeys() {
+        const catSet = new Set();
+        State.allSpots.forEach(s => {
+            const c = val(s, 'category');
+            if (c) catSet.add(c);
+            if (s.livePost && s.livePost.category) catSet.add(s.livePost.category);
+        });
+        (State.liveStandalonePosts || []).forEach(lp => {
+            if (lp.category) catSet.add(lp.category);
+        });
+        return [...catSet].sort((a, b) => String(a).localeCompare(String(b), 'ja'));
+    },
+
+    /** 初登場のカテゴリだけ選択に自動追加（手動OFFした既存カテゴリは維持） */
+    _mergeNewFilterCategories(cats) {
+        cats.forEach(cat => {
+            if (!this._seenFilterCategories.has(cat)) {
+                this._seenFilterCategories.add(cat);
+                this._selectedCategories.add(cat);
+            }
+        });
+    },
+
+    init() {
+        // ?refresh=1 パラメータで強制再取得 (AppSheet Webhook から呼び出し可能)
+        if (new URLSearchParams(location.search).get('refresh') === '1') {
+            State.lastDataHash = '';
+        }
+        MapModule.init();
+
+        // 安全網: 50 秒後もまだ loading 中なら Retry ボタンを表示して操作できるようにする
+        setTimeout(() => {
+            const el = document.getElementById('loading');
+            if (el && el.style.display !== 'none') {
+                console.warn('[App] 50s 経過しても loading 中 — Retry ボタンを表示');
+                const retryEl = document.getElementById('loading-retry');
+                if (retryEl) retryEl.style.display = 'block';
+            }
+        }, 50000);
+    },
+
+    // データ取得完了後のメイン処理
+    _onDataReady() {
+        const spots = State.allSpots;
+        document.getElementById('loading').style.display = 'none';
+
+        if (!this._postsInitialized) {
+            this._postsInitialized = true;
+            PostsModule.fetch();
+            PostsModule.startPolling();
+            EventScheduleModule.fetch();
+            EventScheduleModule.startPolling();
+            EventScheduleModule.startTick();
+        }
+
+        if (spots.length > 0 && this._selectedCategories.size === 0) {
+            [...new Set(spots.map(s => val(s, 'category')))].filter(Boolean)
+                .forEach(c => {
+                    this._selectedCategories.add(c);
+                    this._seenFilterCategories.add(c);
+                });
+        }
+        // posts データを店舗スポットへマージ
+        PostsModule._attachLiveToSpots();
+        this._refreshUI();
+    },
+
+    _refreshUI() {
+        document.getElementById('filter-btn-text').innerText = t('filter');
+        document.getElementById('layer-btn-text').innerText  = t('layers');
+        const homeText = document.getElementById('home-btn-text');
+        if (homeText) homeText.innerText = t('map');
+
+        UIModule.generateFilters(State.allSpots);
+        UIModule.renderLayerPanel();
+        this._applyFilters();
+
+        // LIVE投稿 + 通常newsを統合してティッカーを再起動
+        clearInterval(State.newsInterval);
+        State.currentNewsIndex = 0;
+        UIModule.startTicker();
+    },
+
+    _applyFilters() {
+        const targets = State.allSpots.filter(s => {
+            const cat = this._effectiveFilterCategorySpot(s);
+            if (!this._selectedCategories.has(cat)) return false;
+            // タグフィルタ: 選択タグがあれば、スポットが少なくとも1つ一致するもののみ表示
+            if (State.selectedTags.size > 0) {
+                const spotTags = (State.language === 'ja' ? s.tags : s.tags_en) || [];
+                if (!spotTags.some(tag => State.selectedTags.has(tag))) return false;
+            }
+            return true;
+        });
+        UIModule.updateMarkers(targets);
+        UIModule.renderCards(targets);
+    },
+
+    // ---- 公開メソッド (HTML onclick から参照) ----
+
+    toggleLanguage() {
+        State.language = State.language === 'ja' ? 'en' : 'ja';
+        document.getElementById('lang-text').innerText = State.language.toUpperCase();
+        // カテゴリ・タグは言語ごとに異なるためリセット
+        this._selectedCategories.clear();
+        this._seenFilterCategories.clear();
+        this._allFilterCategoryKeys().forEach(c => {
+            this._seenFilterCategories.add(c);
+            this._selectedCategories.add(c);
+        });
+        State.selectedTags.clear();
+        this._refreshUI();
+    },
+
+    toggleCategory(category, isChecked) {
+        if (isChecked) this._selectedCategories.add(category);
+        else           this._selectedCategories.delete(category);
+
+        const allCheck = document.getElementById('filter-all');
+        const inputs   = document.querySelectorAll('#filter-list input:not(#filter-all)');
+        if (allCheck) allCheck.checked = [...inputs].every(i => i.checked);
+        this._applyFilters();
+    },
+
+    toggleAll(isChecked) {
+        document.querySelectorAll('#filter-list input').forEach(input => {
+            input.checked = isChecked;
+            const cat = input.getAttribute('data-cat');
+            if (cat) {
+                if (isChecked) this._selectedCategories.add(cat);
+                else           this._selectedCategories.delete(cat);
+            }
+        });
+        this._applyFilters();
+    },
+
+    selectSpot(spot) {
+        document.querySelectorAll('.custom-marker').forEach(m => m.classList.remove('active'));
+        document.getElementById(`marker-${spot.id}`)?.classList.add('active');
+        // PC で折りたたまれていたら展開
+        if (State.isPC && document.body.classList.contains('sidebar-collapsed')) {
+            UIModule.toggleSidebar();
+        }
+        MapModule.flyTo(spot);
+        UIModule.expandCardsSheetIfCollapsed();
+        UIModule.highlightCard(spot);
+        gtag('event', 'select_content', { content_type: 'spot', item_id: spot.name });
+    },
+
+    focusCurrentNews() {
+        const list = State.tickerList;
+        if (!list || list.length === 0) return;
+        const item = list[State.currentNewsIndex];
+        if (item) this.selectSpot(item.spot);
+    },
+
+    // タグフィルタのトグル（カード・モーダルのチップとパネルから共有）
+    toggleTagFilter(tag) {
+        if (State.selectedTags.has(tag)) {
+            State.selectedTags.delete(tag);
+        } else {
+            State.selectedTags.add(tag);
+        }
+        // フィルターパネルのチップ状態を同期
+        document.querySelectorAll('.tag-filter-chip').forEach(chip => {
+            chip.classList.toggle('active', State.selectedTags.has(chip.dataset.tag));
+        });
+        // カード内のタグチップ状態を同期
+        document.querySelectorAll('.tag-chip').forEach(chip => {
+            const chipTag = chip.textContent.replace(/^#/, '');
+            chip.classList.toggle('active', State.selectedTags.has(chipTag));
+        });
+        // モーダル内タグチップを同期
+        document.querySelectorAll('#modal-tags .tag-chip').forEach(chip => {
+            const chipTag = chip.textContent.replace(/^#/, '');
+            chip.classList.toggle('active', State.selectedTags.has(chipTag));
+        });
+        this._applyFilters();
+    }
+};
+
+// ================================================================
+// BOOT
+// ================================================================
+App.init();
+</script>
+</body>
+</html>

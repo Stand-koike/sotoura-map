@@ -1,0 +1,66 @@
+# GitHub Pages — web/ をサイトルートとして公開
+# Actions の Repository secrets:
+#   MAPBOX_PUBLIC_TOKEN, GOOGLE_SHEET_ID（必須） / POSTS_SHEET, EVENTS_SHEET（任意）
+# Settings → Pages → Source: GitHub Actions
+#
+# build と deploy を分離し、upload-pages-artifact は build のみ（重複アーティファクト回避）
+
+name: Deploy GitHub Pages
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate web/secrets.local.js from repository secrets
+        env:
+          MAPBOX_TOKEN: ${{ secrets.MAPBOX_PUBLIC_TOKEN }}
+          SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+          POSTS_SHEET: ${{ secrets.POSTS_SHEET }}
+          EVENTS_SHEET: ${{ secrets.EVENTS_SHEET }}
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const MAPBOX_TOKEN = process.env.MAPBOX_TOKEN || '';
+          const SHEET_ID = process.env.SHEET_ID || '';
+          const POSTS_SHEET = (process.env.POSTS_SHEET || '').trim() || 'posts';
+          const EVENTS_SHEET = (process.env.EVENTS_SHEET || '').trim() || 'event_schedule';
+          const body =
+            'window.__SHIMODA_MAP_SECRETS__ = {\n' +
+            `    MAPBOX_TOKEN: ${JSON.stringify(MAPBOX_TOKEN)},\n` +
+            `    SHEET_ID: ${JSON.stringify(SHEET_ID)},\n` +
+            `    POSTS_SHEET: ${JSON.stringify(POSTS_SHEET)},\n` +
+            `    EVENTS_SHEET: ${JSON.stringify(EVENTS_SHEET)}\n` +
+            '};\n';
+          fs.writeFileSync('web/secrets.local.js', body, 'utf8');
+          NODE
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: web
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

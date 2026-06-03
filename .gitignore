@@ -1,0 +1,39 @@
+.DS_Store
+Thumbs.db
+Desktop.ini
+*.log
+
+# IDE（任意・チームで共有する場合のみコミット）
+.vscode/
+
+# 設計・運用ドキュメントはローカルのみ
+docs/
+
+# ローカル秘密設定
+web/secrets.local.js
+web/gas-line-webhook.local.js
+web/config.local.js
+.env
+.env.*
+
+# 案件素材 — 生データ・運用メモ
+clients/*/source/
+clients/*/ops/
+
+# production のラスタ（.wld / coordinates.json / README は Git 管理）
+clients/*/production/*.png
+clients/*/production/*.tif
+clients/*/production/*.jpg
+clients/*/production/*.jpeg
+clients/*/production/*.webp
+
+# 旧置き場（clients/shimoda/source/map/ へ移行済み）
+meta/*
+!meta/README.md
+
+# ルートの元ラスタ
+*.tif
+
+# 編集バックアップ
+* - コピー.*
+* - copy.*

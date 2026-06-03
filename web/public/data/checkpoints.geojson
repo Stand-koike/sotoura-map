@@ -1,0 +1,11 @@
+{
+"type": "FeatureCollection",
+"name": "spot",
+"crs": { "type": "name", "properties": { "name": "urn:ogc:def:crs:OGC:1.3:CRS84" } },
+"features": [
+{ "type": "Feature", "properties": { "checkpoint_id": "start", "checkpoint_name": "出発地点", "arrival_time": "2026-05-16T11:30:00+09:00", "seq": 1 }, "geometry": { "type": "Point", "coordinates": [ 138.945768511142319, 34.671293655686895 ] } },
+{ "type": "Feature", "properties": { "checkpoint_id": "end", "checkpoint_name": "到着地点", "arrival_time": "2026-05-16T12:30:00+09:00", "seq": 2 }, "geometry": { "type": "Point", "coordinates": [ 138.94170927466962, 34.67338924379068 ] } },
+{ "type": "Feature", "properties": { "checkpoint_id": "Nstart", "checkpoint_name": "にぎわい出発地点", "arrival_time": "2026-05-17T11:00:00+09:00", "seq": 3 }, "geometry": { "type": "Point", "coordinates": [ 138.942625249849328, 34.675392310054953 ] } },
+{ "type": "Feature", "properties": { "checkpoint_id": "Nend", "checkpoint_name": "にぎわい到着地点", "arrival_time": "2026-05-17T12:00:00+09:00", "seq": 4 }, "geometry": { "type": "Point", "coordinates": [ 138.942622373659958, 34.675387609564574 ] } }
+]
+}

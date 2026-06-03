@@ -1,0 +1,23 @@
+{
+  "crs": "EPSG:4326",
+  "corners": {
+    "NW": [0.0, 0.0],
+    "NE": [0.0, 0.0],
+    "SE": [0.0, 0.0],
+    "SW": [0.0, 0.0]
+  },
+  "coordinates": [
+    [0.0, 0.0],
+    [0.0, 0.0],
+    [0.0, 0.0],
+    [0.0, 0.0]
+  ],
+  "center": [0.0, 0.0],
+  "maxBounds": [[0.0, 0.0], [0.0, 0.0]],
+  "initZoom": 15,
+  "bearing": 0,
+  "pitch": 45,
+  "wldSource": "map_day.wld",
+  "wldCrs": "EPSG:6676",
+  "notes": "coordinates の順序: [NW, NE, SE, SW]。.wld から pyproj 等で換算して埋める"
+}
