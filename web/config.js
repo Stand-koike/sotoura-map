@@ -44,7 +44,7 @@
             dayOnly:    true,
             urlSunset:  null,
             urlNight:   null,
-            cacheVersion: '20260603-sotoura',
+            cacheVersion: '20260606-sotoura-transparent',
             solarLat:   null,
             solarLng:   null,
             timezone:   'Asia/Tokyo',

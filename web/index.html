@@ -2476,7 +2476,19 @@ const MapModule = {
     _illustrationVisibilityBound: null,
 
     init() {
-        mapboxgl.accessToken = CONFIG.MAPBOX_TOKEN;
+        const token = CONFIG.MAPBOX_TOKEN || '';
+        if (!token || token.includes('YOUR_')) {
+            const loading = document.getElementById('loading');
+            if (loading) {
+                loading.style.display = 'block';
+                loading.innerHTML =
+                    'Mapbox トークン未設定。<code>web/secrets.local.js</code> に <code>MAPBOX_TOKEN</code>（pk.*）を設定し、' +
+                    '<code>web/</code> をドキュメントルートにして開いてください（例: <code>cd web &amp;&amp; python -m http.server 8080</code>）。';
+            }
+            console.error('[MapModule] MAPBOX_TOKEN が未設定です。secrets.example.js → secrets.local.js を参照。');
+            return;
+        }
+        mapboxgl.accessToken = token;
         const { center, initZoom, minZoom, maxZoom, maxBounds, bearing = 0, pitch = 0 } = CONFIG.MAP_IMAGE;
 
         this._map = new mapboxgl.Map({
