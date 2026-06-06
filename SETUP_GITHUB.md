@@ -45,3 +45,22 @@ git push -u origin main
 - タブタイトル「外浦マップ」
 - イラスト `300.png` が表示
 - `web/` に `100.png` 系がないこと（本リポのみ）
+
+## トラブルシュート
+
+### README が表示される（マップではない）
+
+**原因:** Pages の Source が **Deploy from a branch**（リポジトリ直下）のまま。Jekyll が `README.md` をトップページにしている。
+
+**対処:**
+
+1. **Settings → Pages → Build and deployment → Source** を **GitHub Actions** に変更（**Deploy from a branch は選ばない**）
+2. [Actions](https://github.com/Stand-koike/sotoura-map/actions) で `Deploy GitHub Pages` を開き **Re-run all jobs**
+3. **build** と **deploy** の両方が緑になるまで待つ
+4. `https://stand-koike.github.io/sotoura-map/` を Ctrl+Shift+R で再読み込み
+
+Actions デプロイ成功後は `web/index.html` がサイトルートになる（README は表示されない）。
+
+### deploy が 404 で失敗する
+
+**Settings → Pages** で Source が **GitHub Actions** になっているか確認してから Re-run。
