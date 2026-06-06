@@ -27,8 +27,21 @@ python -m http.server 8080
 
 微調整: `web/config.local.js` の `latOffset` / `lngOffset`。
 
-## スプレッドシート（後日）
+## スプレッドシート
 
-GitHub → Settings → Secrets → `GOOGLE_SHEET_ID` を登録後、Actions 再実行。
+| 項目 | 値 |
+|------|-----|
+| シート | [外浦MAP](https://docs.google.com/spreadsheets/d/16E1nAfvtlVSVCaXfHSfzlAWIAHXeuQWudxFssreehy4/edit) |
+| 先頭シート | 店舗マスタ（gviz 取得対象） |
+| 列定義 | [`production/README.md`](production/README.md#スプレッドシート列構成) |
+| コード側 | `web/config.js` の `COLS`（gviz 0-indexed） |
+
+**公開設定:** 「リンクを知っている全員が閲覧可」にすること。
+
+**Secrets:**
+- ローカル: `web/secrets.local.js` の `SHEET_ID`
+- 本番: GitHub → Settings → Secrets → `GOOGLE_SHEET_ID`
+
+secret 追加・変更後は Actions の **Re-run all jobs** を実行。
 
 詳細: [production/README.md](production/README.md)

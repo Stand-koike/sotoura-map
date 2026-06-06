@@ -2489,7 +2489,7 @@ const MapModule = {
             return;
         }
         mapboxgl.accessToken = token;
-        const { center, initZoom, minZoom, maxZoom, maxBounds, bearing = 0, pitch = 0 } = CONFIG.MAP_IMAGE;
+        const { center, initZoom, minZoom, maxZoom, bearing = 0, pitch = 0 } = CONFIG.MAP_IMAGE;
 
         this._map = new mapboxgl.Map({
             container: 'map',
@@ -2507,7 +2507,6 @@ const MapModule = {
             zoom:      initZoom,
             minZoom:   minZoom,
             maxZoom:   maxZoom,
-            maxBounds: maxBounds,
             bearing:   bearing,
             pitch:     pitch,
             antialias: true

@@ -60,3 +60,44 @@ production/
 1. PNG を `web/` にコピー（`config.js` の `MAP_IMAGE.url` 等とファイル名を一致させる）
 2. `coordinates.json` の値を `web/config.js` の `MAP_IMAGE` に転記
 3. `MAP_IMAGE.cacheVersion` を更新（例: `20260603-sotoura`）
+
+## スプレッドシート列構成
+
+先頭シート（店舗マスタ）。`web/config.js` の `COLS` は **gviz の 0-indexed 列番号**。
+
+| 列 | ヘッダー | COLS キー | 備考 |
+|----|----------|-----------|------|
+| A | （行番号） | — | 読み取り対象外 |
+| B | _reserved | — | 読み取り対象外 |
+| C | name | `NAME` | 必須 |
+| D | lat | `LAT` | 必須 |
+| E | lng | `LNG` | 必須 |
+| F | emoji | `EMOJI` | |
+| G | image_url | `URL` | |
+| H | image_url_2 | `IMAGE_URL_2` | |
+| I | image_url_3 | `IMAGE_URL_3` | |
+| J | desc | `DESC` | |
+| K | category | `CAT` | |
+| L | hidden | `HIDDEN` | `TRUE` / `FALSE` |
+| M | store_id | `STORE_ID` | LINE 投稿紐付け用 |
+| N | reserved | `RESERVED` | |
+| O | status | `STATUS` | |
+| P | news | `NEWS` | |
+| Q | detail | `DETAIL` | |
+| R | coupon | `COUPON` | |
+| S | address | `ADDRESS` | |
+| T | phone | `PHONE` | |
+| U | tags | `TAGS` | `#タグ1, #タグ2` 形式 |
+| V | hours | `HOURS` | |
+| W | name_en | `NAME_EN` | |
+| X | desc_en | `DESC_EN` | |
+| Y | category_en | `CAT_EN` | |
+| Z | news_en | `NEWS_EN` | |
+| AA | detail_en | `DETAIL_EN` | |
+| AB | coupon_en | `COUPON_EN` | |
+| AC | address_en | `ADDRESS_EN` | |
+| AD | phone_en | `PHONE_EN` | |
+| AE | tags_en | `TAGS_EN` | |
+| AF | hours_en | `HOURS_EN` | |
+
+列を追加・移動した場合は `web/config.js` の `COLS` を更新し、本表も合わせて修正すること。
