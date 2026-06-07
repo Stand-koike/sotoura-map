@@ -40,7 +40,7 @@ VS Code の **Live Server** で `index.html` を開いてもよい。
 2. 新エリアの場合: `config.example.js` を `config.js` にコピーし、`MAP_IMAGE`・`TRANSLATIONS` 等を編集する。  
 3. 画像差し替え時は `MAP_IMAGE.cacheVersion` を更新する（ブラウザキャッシュ対策）。
 
-列の対応関係は **`config.js` の `COLS`** を正とする。詳細な運用仕様はローカルの `docs/`（Git 対象外）を参照。
+列の対応関係は **`config.js` の `COLS`** を正とする。外浦の列定義は [clients/sotoura/production/README.md](../clients/sotoura/production/README.md#スプレッドシート列構成) を参照（`status_en` 含む英語列あり）。
 
 ---
 

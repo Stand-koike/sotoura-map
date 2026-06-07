@@ -1616,8 +1616,8 @@ const val = (spot, key) =>
 const getStatusInfo = (status) => {
     if (!status) return { color: CONFIG.COLORS.DEFAULT, bg: '#E0F7FF', text: '#006494' };
     const s = String(status);
-    if (s.match(/満|Full|×|Red/i))      return { color: CONFIG.COLORS.RED,    bg: '#FFEBEE', text: '#C62828' };
-    if (s.match(/混|Crowded|△|Yellow/i)) return { color: CONFIG.COLORS.YELLOW, bg: '#FFF8E1', text: '#F9A825' };
+    if (s.match(/満|Full|full|×|Red/i))      return { color: CONFIG.COLORS.RED,    bg: '#FFEBEE', text: '#C62828' };
+    if (s.match(/混|Crowded|congestion|△|Yellow/i)) return { color: CONFIG.COLORS.YELLOW, bg: '#FFF8E1', text: '#F9A825' };
     return { color: CONFIG.COLORS.DEFAULT, bg: '#E0F7FF', text: '#006494' };
 };
 
@@ -1916,6 +1916,7 @@ const DataModule = {
                 name_en:    row.c[COLS.NAME_EN]?.v   || name,
                 desc_en:    row.c[COLS.DESC_EN]?.v   || row.c[COLS.DESC]?.v   || '',
                 category_en:row.c[COLS.CAT_EN]?.v   || row.c[COLS.CAT]?.v    || 'Others',
+                status_en:  row.c[COLS.STATUS_EN]?.v != null ? String(row.c[COLS.STATUS_EN].v) : '',
                 news_en:    row.c[COLS.NEWS_EN]?.v   || '',
                 detail_en:  row.c[COLS.DETAIL_EN]?.v || row.c[COLS.DETAIL]?.v || '',
                 coupon_en:  row.c[COLS.COUPON_EN]?.v || row.c[COLS.COUPON]?.v || '',
@@ -3007,7 +3008,7 @@ const UIModule = {
         const spotsVisible = LayerManager.getDefs().spots.visible;
 
         spots.forEach(spot => {
-            const si = getStatusInfo(spot.status);
+            const si = getStatusInfo(val(spot, 'status'));
             const el = document.createElement('div');
             el.className = 'custom-marker';
             el.id = `marker-${spot.id}`;
@@ -3035,7 +3036,7 @@ const UIModule = {
             }
             inner.appendChild(clip);
 
-            if (spot.status) {
+            if (val(spot, 'status')) {
                 const badge = document.createElement('div');
                 badge.className = 'status-badge';
                 badge.style.cssText = `background:${si.color}; display:block;`;
@@ -3226,7 +3227,7 @@ const UIModule = {
             card.id = `card-${spot.id}`;
             card.onclick = () => App.selectSpot(spot);
 
-            const si = getStatusInfo(spot.status);
+            const si = getStatusInfo(val(spot, 'status'));
             const newsVal = val(spot, 'news');
             const hoursText = val(spot, 'hours');
 
@@ -3237,9 +3238,10 @@ const UIModule = {
             const placeholder = `<div class="card-emoji-placeholder"
                 style="${spot.imageUrl ? 'display:none' : ''}">${spot.emoji}</div>`;
 
+            const statusVal = val(spot, 'status');
             const indParts = [];
-            if (spot.status) {
-                indParts.push(`<span class="card-ind card-ind--status" style="background:${si.bg};box-shadow:0 0 0 2px rgba(255,255,255,0.95)" title="${escapeHtml(spot.status)}" role="img" aria-label="${escapeHtml(spot.status)}"></span>`);
+            if (statusVal) {
+                indParts.push(`<span class="card-ind card-ind--status" style="background:${si.bg};box-shadow:0 0 0 2px rgba(255,255,255,0.95)" title="${escapeHtml(statusVal)}" role="img" aria-label="${escapeHtml(statusVal)}"></span>`);
             }
             if (newsVal) {
                 indParts.push(`<span class="card-ind card-ind--news" title="${escapeHtml(newsVal)}" aria-label="お知らせ"><i class="fas fa-bullhorn" aria-hidden="true"></i></span>`);
@@ -3255,8 +3257,8 @@ const UIModule = {
                 : '';
 
             const detailLines = [];
-            if (spot.status) {
-                detailLines.push(`<div class="card-detail-line"><span class="card-status--compact" style="background:${si.bg};color:${si.text}">${spot.status}</span></div>`);
+            if (statusVal) {
+                detailLines.push(`<div class="card-detail-line"><span class="card-status--compact" style="background:${si.bg};color:${si.text}">${escapeHtml(statusVal)}</span></div>`);
             }
             if (newsVal) {
                 detailLines.push(`<div class="card-detail-line card-detail-news-text"><i class="fas fa-bullhorn"></i> ${newsVal}</div>`);

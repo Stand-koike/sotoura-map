@@ -91,12 +91,13 @@ production/
 | V | 21 | name_en | `NAME_EN` | |
 | W | 22 | desc_en | `DESC_EN` | |
 | X | 23 | category_en | `CAT_EN` | |
-| Y | 24 | news_en | `NEWS_EN` | |
-| Z | 25 | detail_en | `DETAIL_EN` | |
-| AA | 26 | coupon_en | `COUPON_EN` | |
-| AB | 27 | address_en | `ADDRESS_EN` | |
-| AC | 28 | phone_en | `PHONE_EN` | |
-| AD | 29 | tags_en | `TAGS_EN` | |
-| AE | 30 | hours_en | `HOURS_EN` | |
+| Y | 24 | status_en | `STATUS_EN` | 英語表示時の status |
+| Z | 25 | news_en | `NEWS_EN` | |
+| AA | 26 | detail_en | `DETAIL_EN` | |
+| AB | 27 | coupon_en | `COUPON_EN` | |
+| AC | 28 | address_en | `ADDRESS_EN` | |
+| AD | 29 | phone_en | `PHONE_EN` | |
+| AE | 30 | tags_en | `TAGS_EN` | |
+| AF | 31 | hours_en | `HOURS_EN` | |
 
 列を追加・移動した場合は `web/config.js` の `COLS` を更新し、本表も合わせて修正すること。
