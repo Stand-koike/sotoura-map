@@ -24,15 +24,15 @@
         SHEET_ID:     secrets.SHEET_ID     || 'YOUR_GOOGLE_SHEET_ID',
 
         COLS: {
-            NAME: 2, LAT: 3, LNG: 4, EMOJI: 5,
-            URL: 6, IMAGE_URL_2: 7, IMAGE_URL_3: 8,
-            DESC: 9, CAT: 10, HIDDEN: 11,
-            STORE_ID: 12, RESERVED: 13, STATUS: 14,
-            NEWS: 15, DETAIL: 16, COUPON: 17,
-            ADDRESS: 18, PHONE: 19, TAGS: 20, HOURS: 21,
-            NAME_EN: 22, DESC_EN: 23, CAT_EN: 24, NEWS_EN: 25,
-            DETAIL_EN: 26, COUPON_EN: 27, ADDRESS_EN: 28, PHONE_EN: 29,
-            TAGS_EN: 30, HOURS_EN: 31
+            NAME: 1, LAT: 2, LNG: 3, EMOJI: 4,
+            URL: 5, IMAGE_URL_2: 6, IMAGE_URL_3: 7,
+            DESC: 8, CAT: 9, HIDDEN: 10,
+            STORE_ID: 11, RESERVED: 12, STATUS: 13,
+            NEWS: 14, DETAIL: 15, COUPON: 16,
+            ADDRESS: 17, PHONE: 18, TAGS: 19, HOURS: 20,
+            NAME_EN: 21, DESC_EN: 22, CAT_EN: 23, NEWS_EN: 24,
+            DETAIL_EN: 25, COUPON_EN: 26, ADDRESS_EN: 27, PHONE_EN: 28,
+            TAGS_EN: 29, HOURS_EN: 30
         },
 
         COLORS: { DEFAULT: '#0096C7', RED: '#FF5252', YELLOW: '#FFCA28' },

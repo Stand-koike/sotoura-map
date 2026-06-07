@@ -65,39 +65,38 @@ production/
 
 先頭シート（店舗マスタ）。`web/config.js` の `COLS` は **gviz の 0-indexed 列番号**。
 
-| 列 | ヘッダー | COLS キー | 備考 |
-|----|----------|-----------|------|
-| A | （行番号） | — | 読み取り対象外 |
-| B | _reserved | — | 読み取り対象外 |
-| C | name | `NAME` | 必須 |
-| D | lat | `LAT` | 必須 |
-| E | lng | `LNG` | 必須 |
-| F | emoji | `EMOJI` | |
-| G | image_url | `URL` | |
-| H | image_url_2 | `IMAGE_URL_2` | |
-| I | image_url_3 | `IMAGE_URL_3` | |
-| J | desc | `DESC` | |
-| K | category | `CAT` | |
-| L | hidden | `HIDDEN` | `TRUE` / `FALSE` |
-| M | store_id | `STORE_ID` | LINE 投稿紐付け用 |
-| N | reserved | `RESERVED` | |
-| O | status | `STATUS` | |
-| P | news | `NEWS` | |
-| Q | detail | `DETAIL` | |
-| R | coupon | `COUPON` | |
-| S | address | `ADDRESS` | |
-| T | phone | `PHONE` | |
-| U | tags | `TAGS` | `#タグ1, #タグ2` 形式 |
-| V | hours | `HOURS` | |
-| W | name_en | `NAME_EN` | |
-| X | desc_en | `DESC_EN` | |
-| Y | category_en | `CAT_EN` | |
-| Z | news_en | `NEWS_EN` | |
-| AA | detail_en | `DETAIL_EN` | |
-| AB | coupon_en | `COUPON_EN` | |
-| AC | address_en | `ADDRESS_EN` | |
-| AD | phone_en | `PHONE_EN` | |
-| AE | tags_en | `TAGS_EN` | |
-| AF | hours_en | `HOURS_EN` | |
+| 列 | gviz index | ヘッダー | COLS キー | 備考 |
+|----|------------|----------|-----------|------|
+| A | 0 | _reserved | — | 読み取り対象外 |
+| B | 1 | name | `NAME` | 必須 |
+| C | 2 | lat | `LAT` | 必須 |
+| D | 3 | lng | `LNG` | 必須 |
+| E | 4 | emoji | `EMOJI` | |
+| F | 5 | image_url | `URL` | |
+| G | 6 | image_url_2 | `IMAGE_URL_2` | |
+| H | 7 | image_url_3 | `IMAGE_URL_3` | |
+| I | 8 | desc | `DESC` | |
+| J | 9 | category | `CAT` | |
+| K | 10 | hidden | `HIDDEN` | `TRUE` / `FALSE` |
+| L | 11 | store_id | `STORE_ID` | LINE 投稿紐付け用 |
+| M | 12 | reserved | `RESERVED` | |
+| N | 13 | status | `STATUS` | |
+| O | 14 | news | `NEWS` | |
+| P | 15 | detail | `DETAIL` | |
+| Q | 16 | coupon | `COUPON` | |
+| R | 17 | address | `ADDRESS` | |
+| S | 18 | phone | `PHONE` | |
+| T | 19 | tags | `TAGS` | `#タグ1, #タグ2` 形式 |
+| U | 20 | hours | `HOURS` | |
+| V | 21 | name_en | `NAME_EN` | |
+| W | 22 | desc_en | `DESC_EN` | |
+| X | 23 | category_en | `CAT_EN` | |
+| Y | 24 | news_en | `NEWS_EN` | |
+| Z | 25 | detail_en | `DETAIL_EN` | |
+| AA | 26 | coupon_en | `COUPON_EN` | |
+| AB | 27 | address_en | `ADDRESS_EN` | |
+| AC | 28 | phone_en | `PHONE_EN` | |
+| AD | 29 | tags_en | `TAGS_EN` | |
+| AE | 30 | hours_en | `HOURS_EN` | |
 
 列を追加・移動した場合は `web/config.js` の `COLS` を更新し、本表も合わせて修正すること。

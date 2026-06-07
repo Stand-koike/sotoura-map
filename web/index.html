@@ -1858,6 +1858,9 @@ const DataModule = {
             const lat  = row.c[COLS.LAT]?.v;
             const lng  = row.c[COLS.LNG]?.v;
             if (!name || lat == null || lng == null) return acc;
+            const latN = Number(lat);
+            const lngN = Number(lng);
+            if (!Number.isFinite(latN) || !Number.isFinite(lngN)) return acc;
             // HIDDEN 列が false/"FALSE" なら非表示
             if (row.c[COLS.HIDDEN]?.v === false || row.c[COLS.HIDDEN]?.v === 'FALSE') return acc;
 
@@ -1898,7 +1901,7 @@ const DataModule = {
             acc.push({
                 id,
                 storeId,
-                coords:     [Number(lng), Number(lat)],
+                coords:     [lngN, latN],
                 emoji:      row.c[COLS.EMOJI]?.v   || '📍',
                 imageUrl:   url,
                 imageUrl2:  url2,
