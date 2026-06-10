@@ -35,14 +35,6 @@
     <!-- 日の出／日の入り・薄明（イラスト昼夜夕切り替え）。失敗・遅延時は昼画像のみ -->
     <!-- async: ページ起動をブロックしない。getIllustrationPhase は typeof SunCalc === 'undefined' ガード済み -->
     <script src="https://unpkg.com/suncalc@1.9.0/suncalc.js" async></script>
-    <!-- 神輿ルート（Turf）: メインマップ統合モジュール用 -->
-    <script type="importmap">
-    {
-        "imports": {
-            "@turf/turf": "https://esm.sh/@turf/turf@6.5.0"
-        }
-    }
-    </script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 
     <style>
@@ -440,92 +432,6 @@
         .my-location-marker i {
             color: #FF5252; font-size: 38px; line-height: 1;
             filter: drop-shadow(0 2px 5px rgba(255,255,255,0.85));
-        }
-
-        /* 神輿ルート — HTMLマーカー（画面上で縦を保つピン形状＋進行ベアリングは地図基準で維持） */
-        .mikoshi-marker {
-            position: relative;
-            width: 72px;
-            min-height: 96px;
-            height: auto;
-            pointer-events: none;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: flex-end;
-            --stem-color: #0288d1;
-        }
-        .mikoshi-marker-shadow {
-            position: absolute;
-            bottom: 2px;
-            left: 50%;
-            width: 42px;
-            height: 12px;
-            margin-left: -21px;
-            background: radial-gradient(ellipse at center, rgba(0, 40, 80, 0.45) 0%, rgba(0, 40, 80, 0.08) 70%, transparent 100%);
-            border-radius: 50%;
-            filter: blur(3px);
-            transform-origin: center center;
-            animation: mikoshi-shadow-breathe 2.6s ease-in-out infinite;
-            z-index: 0;
-        }
-        .mikoshi-marker-body {
-            position: relative;
-            z-index: 1;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            transform-origin: center bottom;
-            /* 視点ピッチに合わせた倒れ込み rotateX は使わず、画面上の縦立ちとの兼ね合いを優先 */
-            animation: mikoshi-float-pin 2.8s ease-in-out infinite;
-        }
-        .mikoshi-marker-head {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            flex-shrink: 0;
-            position: relative;
-            z-index: 2;
-        }
-        .mikoshi-marker-stem {
-            width: 0;
-            height: 0;
-            margin-top: -6px;
-            border-left: 10px solid transparent;
-            border-right: 10px solid transparent;
-            border-top: 15px solid var(--stem-color);
-            filter: drop-shadow(0 2px 5px rgba(0, 0, 0, 0.3));
-            pointer-events: none;
-            flex-shrink: 0;
-        }
-        .mikoshi-marker-img {
-            width: 58px;
-            height: auto;
-            display: block;
-            filter: drop-shadow(0 6px 10px rgba(0, 60, 100, 0.35));
-        }
-        @keyframes mikoshi-float-pin {
-            0%, 100% { transform: translateY(0); }
-            50%      { transform: translateY(-10px); }
-        }
-        @keyframes mikoshi-shadow-breathe {
-            0%, 100% { transform: scaleX(1) scaleY(1); opacity: 0.85; }
-            50% { transform: scaleX(0.75) scaleY(0.85); opacity: 0.55; }
-        }
-        @media (max-width: 767px) {
-            .mikoshi-marker {
-                width: 56px;
-                min-height: 82px;
-            }
-            .mikoshi-marker-img {
-                width: 46px;
-            }
-            .mikoshi-marker-stem {
-                margin-top: -5px;
-                border-left-width: 8px;
-                border-right-width: 8px;
-                border-top-width: 12px;
-            }
         }
 
         /* ============================================================
@@ -1572,10 +1478,6 @@ const CONFIG = (typeof window !== 'undefined' && window.__SHIMODA_MAP_CONFIG__)
             POLL_INTERVAL: 30000,
             POSTS_SHEET: 'posts',
             LIVE_POST_POLL_INTERVAL: 30000,
-            EVENTS_SHEET: 'event_schedule',
-            EVENT_SCHEDULE_LEAD_MINUTES: 30,
-            EVENT_SCHEDULE_POLL_INTERVAL: 60000,
-            EVENT_SCHEDULE_TICK_MS: 60000,
             TRANSLATIONS: { ja: {}, en: {} }
         };
     })();
@@ -1600,10 +1502,7 @@ const State = {
     liveStandalonePosts: [],     // 運営スポット / GPS（独立マーカー）
     liveMarkers:           [],
     livePostPollInterval:  null,
-    tickerList:            [],
-    scheduledEvents:       [],   // EventScheduleModule がセット
-    scheduleMarkers:       [],   // スケジュールピン (MapboxGL Marker)
-    scheduleTickInterval:  null  // 1 分ティック
+    tickerList:            []
 };
 
 // ================================================================
@@ -2007,7 +1906,6 @@ const PostsModule = {
         const postsByStoreId = {};
         const mobileList = [];
 
-        const now = Date.now();
         const buckets = {}; // dedupキーごと最新1件
 
         if (!json?.table?.rows) return { postsByStoreId, liveStandalonePosts: mobileList };
@@ -2023,9 +1921,6 @@ const PostsModule = {
             const imageUrl = rawImg ? normalizeImageUrl(rawImg) : '';
             if (!text && !imageUrl) return;
 
-            const expiresAt = parseSheetDate(row.c[12]?.v);
-            if (!expiresAt || expiresAt.getTime() <= now) return;
-
             const role = row.c[2]?.v != null ? String(row.c[2].v).trim().toLowerCase() : '';
             const sourceType = row.c[3]?.v != null ? String(row.c[3].v).trim().toLowerCase() : '';
             const category = row.c[4]?.v != null ? String(row.c[4].v).trim() : '';
@@ -2040,6 +1935,7 @@ const PostsModule = {
 
             const storeId = normalizeStoreId_(row.c[9]?.v);
             const spotIdCol = row.c[10]?.v != null ? String(row.c[10].v).trim() : '';
+            const expiresAt = parseSheetDate(row.c[12]?.v);
 
             const post = {
                 postId:     row.c[0]?.v != null ? String(row.c[0].v) : '',
@@ -2059,9 +1955,9 @@ const PostsModule = {
 
             let dedupKey;
             if (sourceType === 'fixed' && storeId) {
-                dedupKey = `f_${category}_${storeId}`;
+                dedupKey = `f_${storeId}`;
             } else if (lat != null && lng != null && !isNaN(lat) && !isNaN(lng)) {
-                dedupKey = `m_${category}_${roundCoord5(lat)}_${roundCoord5(lng)}`;
+                dedupKey = `m_${roundCoord5(lat)}_${roundCoord5(lng)}`;
             } else return;
 
             const prev = buckets[dedupKey];
@@ -2111,124 +2007,7 @@ window._gvizPostsCb = function(json) {
 };
 
 // ================================================================
-// EventScheduleModule — 祭スケジュール（event_schedule シート）取得・パース
-// ================================================================
-const EventScheduleModule = {
-
-    _fetchTimeout: null,
-
-    fetch() {
-        const cbName = '_gvizEventsCb';
-        const oldScript = document.getElementById('gviz-events-script');
-        if (oldScript) oldScript.remove();
-
-        clearTimeout(this._fetchTimeout);
-        this._fetchTimeout = setTimeout(() => {
-            console.warn('[EventSchedule] タイムアウト');
-        }, 12000);
-
-        const script = document.createElement('script');
-        script.id = 'gviz-events-script';
-        const sheetParam = encodeURIComponent(CONFIG.EVENTS_SHEET || 'event_schedule');
-        script.src =
-            `https://docs.google.com/spreadsheets/d/${CONFIG.SHEET_ID}/gviz/tq?tqx=responseHandler:${cbName}&sheet=${sheetParam}&_=${Date.now()}`;
-        script.onerror = () => {
-            clearTimeout(this._fetchTimeout);
-            console.warn('[EventSchedule] シート取得失敗');
-        };
-        document.body.appendChild(script);
-    },
-
-    onLoaded(json) {
-        clearTimeout(this._fetchTimeout);
-        State.scheduledEvents = this._parse(json);
-        App._applyFilters();
-    },
-
-    /**
-     * 列 (0-index):
-     *  0: event_id  1: title  2: start_at  3: lat  4: lng
-     *  5: emoji     6: duration_minutes  7: lead_minutes
-     *  8: hidden（TRUE/1/"TRUE" のとき除外・空欄は掲載）  9: title_en  10: image_url（任意・ポップアップに1枚）
-     */
-    _parse(json) {
-        if (!json?.table?.rows) return [];
-        const events = [];
-        json.table.rows.forEach((row, i) => {
-            if (!row?.c) return;
-
-            // hidden 列: TRUE / "TRUE" / 1 のときだけ除外（チェックボックス未チェック=false は「表示」扱い）
-            const hid = row.c[8]?.v;
-            if (hid === true || hid === 1 || String(hid).trim().toUpperCase() === 'TRUE') return;
-
-            const title   = row.c[1]?.v != null ? String(row.c[1].v).trim() : '';
-            if (!title) return;
-
-            const startAt = parseSheetDate(row.c[2]?.v);
-            if (!startAt) return;
-
-            const lat = row.c[3]?.v != null ? Number(row.c[3].v) : null;
-            const lng = row.c[4]?.v != null ? Number(row.c[4].v) : null;
-            if (lat == null || lng == null || isNaN(lat) || isNaN(lng)) return;
-
-            const emoji    = row.c[5]?.v ? String(row.c[5].v).trim() : '🎪';
-            const durMin   = row.c[6]?.v != null && row.c[6].v !== '' ? Number(row.c[6].v) : 60;
-            const leadMin  = row.c[7]?.v != null && row.c[7].v !== ''
-                ? Number(row.c[7].v)
-                : CONFIG.EVENT_SCHEDULE_LEAD_MINUTES;
-            const titleEn  = row.c[9]?.v ? String(row.c[9].v).trim() : title;
-            const imageUrl = row.c[10]?.v != null && String(row.c[10].v).trim() !== ''
-              ? String(row.c[10].v).trim()
-              : '';
-            const eventId  = row.c[0]?.v ? String(row.c[0].v).trim() : `ev_${i}`;
-
-            events.push({
-                id:        eventId,
-                title,
-                titleEn,
-                startAt,
-                endAt:     new Date(startAt.getTime() + durMin * 60000),
-                leadMs:    leadMin * 60000,
-                coords:    [lng, lat],
-                emoji,
-                imageUrl
-            });
-        });
-        return events;
-    },
-
-    /** 表示すべきイベントだけ返す */
-    visible(now = Date.now()) {
-        return State.scheduledEvents.filter(ev => {
-            const showFrom = ev.startAt.getTime() - ev.leadMs;
-            return now >= showFrom && now < ev.endAt.getTime();
-        });
-    },
-
-    startPolling() {
-        if (!CONFIG.EVENT_SCHEDULE_POLL_INTERVAL) return;
-        setInterval(() => EventScheduleModule.fetch(), CONFIG.EVENT_SCHEDULE_POLL_INTERVAL);
-    },
-
-    /** 1 分ティック: レイヤーのみ再描画（シートは再取得しない） */
-    startTick() {
-        if (!CONFIG.EVENT_SCHEDULE_TICK_MS) return;
-        clearInterval(State.scheduleTickInterval);
-        State.scheduleTickInterval = setInterval(
-            () => App._applyFilters(),
-            CONFIG.EVENT_SCHEDULE_TICK_MS
-        );
-    }
-};
-
-window._gvizEventsCb = function(json) {
-    clearTimeout(EventScheduleModule._fetchTimeout);
-    EventScheduleModule.onLoaded(json);
-};
-
-// ================================================================
 // LayerManager — レイヤー管理
-//   神輿レイヤーは js/mikoshi-main-map.js が GeoJSON を注入
 // ================================================================
 const LayerManager = {
 
@@ -2264,22 +2043,6 @@ const LayerManager = {
             type:    'geojson-fill',
             data: { type: 'FeatureCollection', features: [] }
         },
-        mikoshi: {
-            name:    '神輿ルート',
-            name_en: 'Mikoshi route',
-            icon:    '🏮',
-            color:   '#C62828',
-            visible: true,
-            type:    'mikoshi'
-        },
-        events: {
-            name:    '祭スケジュール',
-            name_en: 'Event Schedule',
-            icon:    '🎪',
-            color:   '#F57C00',
-            visible: true,
-            type:    'markers'
-        }
     },
 
     // マップロード後に初期化
@@ -2315,23 +2078,12 @@ const LayerManager = {
         def.visible = !def.visible;
 
         if (def.type === 'markers') {
-            // spots と events は両方 type:markers だが DOM は別配列（混在させない）
-            if (id === 'spots') {
-                State.activeMarkers.forEach(m => {
-                    m.getElement().style.display = def.visible ? '' : 'none';
-                });
-                State.liveMarkers.forEach(m => {
-                    m.getElement().style.display = def.visible ? '' : 'none';
-                });
-            } else if (id === 'events') {
-                State.scheduleMarkers.forEach(m => {
-                    m.getElement().style.display = def.visible ? '' : 'none';
-                });
-            }
-        } else if (def.type === 'mikoshi') {
-            if (typeof window.__mikoshiApplyVisibility === 'function') {
-                window.__mikoshiApplyVisibility();
-            }
+            State.activeMarkers.forEach(m => {
+                m.getElement().style.display = def.visible ? '' : 'none';
+            });
+            State.liveMarkers.forEach(m => {
+                m.getElement().style.display = def.visible ? '' : 'none';
+            });
         } else {
             const layerId = `${id}-layer`;
             if (this._map?.getLayer(layerId)) {
@@ -2359,9 +2111,6 @@ const LayerManager = {
 
     getDefs() { return this._defs; }
 };
-
-/** 神輿レイヤのユーザー表示（時間帯と AND。モジュールから参照） */
-window.__shimoda_getMikoshiLayerOn = () => !!LayerManager.getDefs().mikoshi?.visible;
 
 /** JST の暦・年月日（数値） */
 function getJstYmdParts(d) {
@@ -2523,9 +2272,6 @@ const MapModule = {
 
             try {
                 LayerManager.init(this._map);
-                import('./js/mikoshi-main-map.js')
-                    .then((mod) => mod.attachToMainMap(this._map))
-                    .catch((e) => console.warn('[Mikoshi]', e));
             } catch (e) {
                 console.error('[MapModule] レイヤー初期化エラー:', e);
             }
@@ -3000,10 +2746,8 @@ const UIModule = {
     updateMarkers(spots) {
         State.activeMarkers.forEach(m => m.remove());
         State.liveMarkers.forEach(m => m.remove());
-        State.scheduleMarkers.forEach(m => m.remove());
         State.activeMarkers = [];
         State.liveMarkers = [];
-        State.scheduleMarkers = [];
 
         const spotsVisible = LayerManager.getDefs().spots.visible;
 
@@ -3139,77 +2883,6 @@ const UIModule = {
             State.liveMarkers.push(marker);
         });
 
-        /* 祭スケジュール ピン（レイヤーOFFでも DOM は生成し display で切替／toggle と整合） */
-        const eventsVisible = LayerManager.getDefs().events?.visible;
-        const nowEv = Date.now();
-        EventScheduleModule.visible(nowEv).forEach(ev => {
-                const isUpcoming = nowEv < ev.startAt.getTime();
-                const accentColor = '#F57C00';
-
-                const el = document.createElement('div');
-                el.className = 'custom-marker';
-                el.id = `ev-marker-${ev.id}`;
-                if (!eventsVisible) el.style.display = 'none';
-
-                const inner = document.createElement('div');
-                inner.className = 'marker-inner floating';
-                inner.style.borderColor = accentColor;
-
-                const clip = document.createElement('div');
-                clip.className = 'marker-clip';
-
-                if (ev.imageUrl) {
-                    const imgPin = document.createElement('img');
-                    imgPin.className = 'marker-image';
-                    imgPin.alt = '';
-                    imgPin.referrerPolicy = 'no-referrer';
-                    imgPin.src = ev.imageUrl;
-                    imgPin.onerror = function () {
-                        try { this.remove(); } catch (ex) {}
-                    };
-                    clip.appendChild(imgPin);
-                }
-
-                const emoji = document.createElement('span');
-                emoji.className = 'marker-emoji';
-                emoji.innerText = ev.emoji;
-                clip.appendChild(emoji);
-                inner.appendChild(clip);
-
-                if (isUpcoming) {
-                    const badge = document.createElement('div');
-                    badge.className = 'marker-news-badge';
-                    badge.style.background = accentColor;
-                    badge.innerHTML = '<i class="fas fa-clock"></i>';
-                    el.appendChild(badge);
-                }
-
-                el.appendChild(inner);
-
-                const title  = State.language === 'ja' ? ev.title : ev.titleEn;
-                const startFmt = ev.startAt.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
-                const endFmt   = ev.endAt.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
-                const statusText = isUpcoming
-                    ? `<span style="color:${accentColor};font-weight:bold;">まもなく開始</span>`
-                    : `<span style="color:#2E7D32;font-weight:bold;">開催中</span>`;
-                const imgHtml = ev.imageUrl
-                    ? `<div style="margin-top:8px"><img src="${escapeHtml(ev.imageUrl)}" alt="" referrerpolicy="no-referrer" style="max-width:100%;width:100%;max-height:200px;object-fit:cover;border-radius:8px;display:block" onerror="this.style.display='none'"/></div>`
-                    : '';
-                const popupHtml = `<div style="max-width:240px;font-size:13px;line-height:1.5">
-                    <div style="font-size:20px;text-align:center;margin-bottom:4px">${ev.emoji}</div>
-                    ${imgHtml}
-                    <div style="font-weight:bold;font-size:14px">${escapeHtml(title)}</div>
-                    <div style="font-size:11px;color:#666;margin-top:2px">${startFmt} – ${endFmt}</div>
-                    <div style="margin-top:4px">${statusText}</div>
-                </div>`;
-
-                const schedMarker = new mapboxgl.Marker({ element: el, anchor: 'bottom' })
-                    .setLngLat(ev.coords)
-                    .setPopup(new mapboxgl.Popup({ offset: 28 }).setHTML(popupHtml))
-                    .addTo(MapModule._map);
-
-                State.scheduleMarkers.push(schedMarker);
-            });
     },
 
     // ---- カードパネル ----
@@ -3397,19 +3070,10 @@ const UIModule = {
     },
 
     startTicker() {
-        State.tickerList = this._buildTickerList();
-        if (State.tickerList.length === 0) {
-            document.getElementById('news-ticker-wrapper').style.display = 'none';
-            return;
-        }
-        document.getElementById('news-ticker-wrapper').style.display = 'flex';
-        State.currentNewsIndex = 0;
-        this._updateTickerText();
+        // 外浦MAP: 中央上部ニュースリストは非表示（カード・ピンの LIVE 表示のみ）
         clearInterval(State.newsInterval);
-        State.newsInterval = setInterval(() => {
-            State.currentNewsIndex = (State.currentNewsIndex + 1) % State.tickerList.length;
-            this._updateTickerText();
-        }, 5000);
+        const wrapper = document.getElementById('news-ticker-wrapper');
+        if (wrapper) wrapper.style.display = 'none';
     },
 
     _updateTickerText() {
@@ -3833,9 +3497,6 @@ const App = {
             this._postsInitialized = true;
             PostsModule.fetch();
             PostsModule.startPolling();
-            EventScheduleModule.fetch();
-            EventScheduleModule.startPolling();
-            EventScheduleModule.startTick();
         }
 
         if (spots.length > 0 && this._selectedCategories.size === 0) {
@@ -3860,9 +3521,6 @@ const App = {
         UIModule.renderLayerPanel();
         this._applyFilters();
 
-        // LIVE投稿 + 通常newsを統合してティッカーを再起動
-        clearInterval(State.newsInterval);
-        State.currentNewsIndex = 0;
         UIModule.startTicker();
     },
 

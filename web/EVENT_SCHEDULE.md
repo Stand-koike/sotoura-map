@@ -78,6 +78,6 @@
 
 ## 関連ファイル
 
-- フロント実装: `web/index.html`（`EventScheduleModule`）
+- ~~フロント実装: `web/index.html`（`EventScheduleModule`）~~ **外浦MAP では削除済み**（将来拡張時に再導入可）
 - シート雛形（GAS）: `web/gas-line-webhook.js` の `setupSheets` 内 `event_schedule` 作成ブロック
 - 概要（リポジトリ README）: リポジトリ直下 `README.md` の「祭イベントスケジュールピン」

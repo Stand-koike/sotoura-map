@@ -17,8 +17,7 @@
  *
  * 【ロールと投稿】
  *   店舗: 固定座標（スプレッドシート先頭シートの store_id と座標）。
- *   協力者: LINE 位置メッセージ後に短文テキスト → 写真 → GPS 投稿。
- *   運営（operator）: ソース先頭の ROLE_OPERATOR_ENABLED で再開予定（venue_spots 番号選択）。現状は無効。
+ *   店舗のみ（協力者・運営ロールは廃止。将来拡張余地あり）。
  *
  * 【スプレッドシートでのモデレーション】
  *   posts シートの isVisible を FALSE にするとマップから非表示。
@@ -186,14 +185,13 @@ function getRegistrationPassword_() {
 }
 
 // メインスポット列（browser CONFIG.COLS と一致する 0-based index）
-// A=_reserved, B=name(1), C=lat(2), D=lng(3) … J=store_id(9)
+// A=_reserved, B=name(1), C=lat(2), D=lng(3) … M=store_id(11) — config.js COLS.STORE_ID と一致
 const MASTER_COL_NAME = 1;
 const MASTER_COL_LAT = 2;
 const MASTER_COL_LNG = 3;
-const MASTER_COL_STORE_ID = 9;
+const MASTER_COL_STORE_ID = 11;
 
 const POSTS_SHEET_NAME = 'posts';
-const VENUE_SPOTS_SHEET_NAME = 'venue_spots';
 const BOT_SESSIONS_SHEET_NAME = 'bot_sessions';
 const USER_MAP_SHEET_NAME = 'user_map';
 const PENDING_SHEET_NAME = 'pending_posts';
@@ -204,22 +202,15 @@ const DRIVE_FOLDER_NAME = 'LINE_MAP_IMAGES';
 const PENDING_EXPIRE_MS = 1 * 60 * 1000;
 
 const ROLE_STORE = 'store';
-const ROLE_OPERATOR = 'operator';
 const ROLE_CONTRIBUTOR = 'contributor';
-/**
- * false の間は運営（operator）の新規登録・投稿フローを無効化する。
- * シートの role 列に既存の operator は引き続き KNOWN_ROLE_VALUES で解釈される。
- * 運営を再開するときは true に戻す。
- */
-const ROLE_OPERATOR_ENABLED = false;
-/** user_map の B 列が拡張形式として解釈される role 値（レガシー行・将来の運営再開用） */
-const KNOWN_ROLE_VALUES = [ROLE_STORE, ROLE_OPERATOR, ROLE_CONTRIBUTOR];
+/** user_map の B 列が拡張形式として解釈される role 値（レガシー行互換） */
+const KNOWN_ROLE_VALUES = [ROLE_STORE, ROLE_CONTRIBUTOR];
 
-const CATEGORIES = ['グルメ', '混雑', '景色', 'ステージ', '子連れ', 'お知らせ'];
+/** カテゴリ選択は廃止。posts.category には固定値を入れる */
+const DEFAULT_POST_CATEGORY = 'お知らせ';
 
 const STEP_IDLE = 'idle';
 const STEP_AWAITING_CONTENT = 'awaiting_content';
-const STEP_AWAITING_SPOT = 'awaiting_spot';
 const STEP_AWAITING_CATEGORY = 'awaiting_category';
 /** 未登録向け: 「登録 店舗」またはキーワード「店／店舗」直後の、店舗名1通（ワンショット「店　名前」も可） */
 const STEP_AWAITING_REGISTER_STORE_ID = 'awaiting_register_store_id';
@@ -227,18 +218,11 @@ const STEP_AWAITING_STORE_LOCATION   = 'awaiting_store_location';
 /** 「登録 〇〇」のあと、スクリプトプロパティの登録パスワードを別メッセージで受け取る */
 const STEP_AWAITING_REGISTRATION_PASSWORD = 'awaiting_registration_password';
 
-const TTL_MS = {
-  [ROLE_STORE]: 6 * 60 * 60 * 1000,
-  [ROLE_OPERATOR]: 3 * 60 * 60 * 1000,
-  [ROLE_CONTRIBUTOR]: 1 * 60 * 60 * 1000
-};
+/** 投稿は消さない方針。expiresAt はシート互換のため遠い未来を入れる */
+const POST_RETENTION_MS = 100 * 365 * 24 * 60 * 60 * 1000;
 
-/** 投稿完了メッセージ用（整数時間なら「約N時間」、それ以外は分） */
-function formatPostTtlHint_(ms) {
-  const h = ms / (60 * 60 * 1000);
-  if (h >= 1 && h === Math.floor(h)) return '約' + h + '時間';
-  const mins = Math.round(ms / 60000);
-  return '約' + mins + '分';
+function getPostExpiresAt_(createdAt) {
+  return new Date(createdAt.getTime() + POST_RETENTION_MS);
 }
 
 const SOURCE_FIXED = 'fixed';
@@ -267,32 +251,26 @@ function normalizeRegisterMenuTrigger_(text) {
 /** LINE 返信文言（登録フローで同一文面を共有） */
 const MSG_LINE_REGISTRATION_PASSWORD_NEXT_ =
   '🔒 続けて登録パスワードをそのまま1通だけ送ってください。\n（やめるときは「登録解除」）';
-const MSG_LINE_REGISTERED_OPERATOR_OK_ =
-  '✅ 運営として登録しました。\n投稿の順番の例: 短文テキスト→📸写真（どちらか一方でも可）→スポット番号→カテゴリです。';
-const MSG_LINE_REGISTERED_CONTRIBUTOR_OK_ =
-  '✅ 協力者として登録しました。\n投稿の順番: 📍位置情報 → 短文テキスト → 📸写真 → カテゴリ です。';
+const MSG_LINE_CONTRIBUTOR_REGISTRATION_SUSPENDED_ =
+  '⚠️ 協力者登録は現在受け付けていません。「登録 店舗」からお店として登録してください。';
+const MSG_LINE_LEGACY_ROLE_SUSPENDED_ =
+  '⚠️ このロールは現在ご利用いただけません。「登録解除」後「登録 店舗」から再度登録してください。';
 
 /** 店舗登録: メニュー「店舗」またはキーワード「店／店舗」のあと、店舗名だけを促す */
 const MSG_LINE_STORE_AWAITING_NAME_AFTER_SHOP_ONLY_ =
   '店舗登録です。\n次のメッセージで**店舗名だけ**を1通で送ってください（マップの店舗一覧と同じ表記）。\n例：風まち';
 
 const MSG_LINE_REGISTER_MENU_BODY_ =
-  '登録の種類を下のボタンで選んでください👇\n' +
-  '・協力 … そのまま協力者として登録（パスワード設定時は続けて案内します）\n' +
-  '・店舗 … あと1通、店舗名の入力があります';
+  '店舗登録です👇\n' +
+  '「店舗」ボタンのあと、マップの店舗一覧と同じ店舗名を1通で送ってください。';
 
 const MSG_LINE_STORE_REGISTRATION_PW_MISMATCH_ =
   '🔒 登録パスワードが違います。\n店舗名を送ったうえで、別のメッセージでパスワードだけを送ってください。';
 
 /** buildHelpMessage の登録欄（「登録」と送る〜の続き） */
 const MSG_LINE_HELP_REGISTER_STORE_HINT_ =
-  '・「登録」→ 協力 / 店舗 のボタン\n' +
-  '・店舗はあと1通で店舗名（例：風まち）。省略時は「店　風まち」の1通でも可\n\n';
-
-const MSG_LINE_OPERATOR_REGISTRATION_SUSPENDED_ =
-  '⚠️ 運営アカウントの登録は現在準備中です。「登録」メニューの「協力」または「店舗」をご利用ください。';
-const MSG_LINE_OPERATOR_ROLE_SUSPENDED_ =
-  '⚠️ 運営ロールは現在ご利用いただけません。\n「登録解除」したうえで、協力者または店舗として再度登録してください。（運営の再開は準備中です）';
+  '・「登録」→ 店舗ボタン → 店舗名1通（例：風まち）\n' +
+  '・省略: 「店　風まち」 / 「店舗　風まち」 / 「登録 店舗 風まち」\n\n';
 
 function buildMsgLineRegisteredStoreOk_(storeId) {
   return (
@@ -350,15 +328,11 @@ function webhookExecErr_(message) {
 
 /** 1 メッセージイベントごとにリセット。同一実行内のシート再読み取りを減らす */
 var __webhookReqStartMs_ = 0;
-var __webhookVenueSpotsMemoLoaded_ = false;
-var __webhookVenueSpotsMemo_ = [];
 /** undefined=未読込 null=シートなし それ以外=getValues の配列 */
 var __webhookUserMapRows_ = undefined;
 var __webhookBotSessionRows_ = undefined;
 
 function resetWebhookRequestCache_() {
-  __webhookVenueSpotsMemoLoaded_ = false;
-  __webhookVenueSpotsMemo_ = [];
   __webhookUserMapRows_ = undefined;
   __webhookBotSessionRows_ = undefined;
   __webhookSsCache_ = null;
@@ -608,42 +582,14 @@ function handleTextIncoming(userId, replyToken, text) {
     return;
   }
 
-  if (!ROLE_OPERATOR_ENABLED && user.role === ROLE_OPERATOR) {
-    replyText(replyToken, MSG_LINE_OPERATOR_ROLE_SUSPENDED_);
-    return;
-  }
-
-  let sess = getSession(userId);
-  let catPick = parseCategoryFromText(text);
-  if (!catPick && sess.step === STEP_AWAITING_CATEGORY && CATEGORIES.indexOf(text.trim()) >= 0) {
-    catPick = text.trim();
-  }
-  if (catPick) {
-    if (sess.step === STEP_AWAITING_CATEGORY) {
-      finalizePostWithCategory(userId, replyToken, user, catPick);
-      return;
-    }
-  }
-
-  if (ROLE_OPERATOR_ENABLED && user.role === ROLE_OPERATOR && sess.step === STEP_AWAITING_SPOT) {
-    const n = parseInt(text, 10);
-    if (/^\d+$/.test(text) && !isNaN(n)) {
-      handleOperatorSpotNumber(userId, replyToken, n);
-      return;
-    }
-    replyText(replyToken, '番号だけ送ってください（例：2）');
+  if (user.role !== ROLE_STORE) {
+    replyText(replyToken, MSG_LINE_LEGACY_ROLE_SUSPENDED_);
     return;
   }
 
   flushExpiredPending();
 
-  // flush は他ユーザーだけでなく期限切れ pending の自分のセッションも更新しうる
-  sess = getSession(userId);
-
-  if (user.role === ROLE_STORE && sess.step === STEP_AWAITING_CATEGORY) {
-    replyText(replyToken, 'カテゴリをボタンから選んでください👇');
-    return;
-  }
+  const sess = getSession(userId);
 
   if (user.role === ROLE_STORE) {
     if (
@@ -655,10 +601,6 @@ function handleTextIncoming(userId, replyToken, text) {
       return;
     }
     handleStoreContentText(userId, replyToken, user, text);
-  } else if (ROLE_OPERATOR_ENABLED && user.role === ROLE_OPERATOR) {
-    handleOperatorContentText(userId, replyToken, user, text);
-  } else if (user.role === ROLE_CONTRIBUTOR) {
-    handleContributorContentText(userId, replyToken, user, text);
   }
 }
 
@@ -672,8 +614,8 @@ function handleImageIncoming(userId, replyToken, messageId) {
     return;
   }
 
-  if (!ROLE_OPERATOR_ENABLED && user.role === ROLE_OPERATOR) {
-    replyText(replyToken, MSG_LINE_OPERATOR_ROLE_SUSPENDED_);
+  if (user.role !== ROLE_STORE) {
+    replyText(replyToken, MSG_LINE_LEGACY_ROLE_SUSPENDED_);
     return;
   }
 
@@ -710,20 +652,18 @@ function handleImageIncoming(userId, replyToken, messageId) {
     const pendingForImg = loadPending(userId);
     if (pendingForImg && pendingForImg.message) {
       // テキストが先に届いていた → 通常のマージフロー
-      mergeImageWithPendingThenAskCategory(userId, replyToken, user, imageUrl);
+      mergeImageWithPendingThenFinalize(userId, replyToken, user, imageUrl);
     } else if (pendingForImg && pendingForImg.imageUrl) {
       // すでに画像pending あり → 上書き保存して続行
       savePending(userId, user.fixedStoreId || '', '', imageUrl);
       replyText(replyToken,
-        `📸 写真を更新しました。（順番: テキスト→写真）テキストを送るとセットで反映されます（${PENDING_EXPIRE_MS / 60000}分以内）\nテキスト不要ならそのまま待つとカテゴリ選択に進みます。`);
+        `📸 写真を更新しました。（順番: テキスト→写真）テキストを送るとセットで反映されます（${PENDING_EXPIRE_MS / 60000}分以内）\nテキスト不要ならそのまま待つと自動でマップに反映されます。`);
     } else {
       // 画像が先に届いた → imageUrl を pending に保存してテキストを待つ
       savePending(userId, user.fixedStoreId || '', '', imageUrl);
       replyText(replyToken,
-        `📸 写真を受け付けました。（順番: テキスト→写真）テキストを送るとセットで反映されます（${PENDING_EXPIRE_MS / 60000}分以内）\nテキスト不要ならそのまま待つとカテゴリ選択に進みます。`);
+        `📸 写真を受け付けました。（順番: テキスト→写真）テキストを送るとセットで反映されます（${PENDING_EXPIRE_MS / 60000}分以内）\nテキスト不要ならそのまま待つと自動でマップに反映されます。`);
     }
-  } else if (ROLE_OPERATOR_ENABLED && user.role === ROLE_OPERATOR) {
-    mergeImageWithPendingThenAskSpot(userId, replyToken, user, imageUrl);
   }
 }
 
@@ -756,13 +696,13 @@ function handleLocationIncoming(userId, replyToken, lat, lng) {
       replyText(replyToken,
         `📍 位置情報を登録しました（${storeId}）\n` +
         `これでライブ投稿が可能になりました🎉\n\n` +
-        `投稿の順番: 短文テキスト → 📸写真 → カテゴリ（ボタン）です。\n` +
+        `投稿の順番: 短文テキスト → 📸写真 です。\n` +
         `お店から離れた場所から投稿するときは、先に📍位置情報を送ってから、同じ順番でお願いします。`);
       return;
     }
 
-    if (user.role !== ROLE_CONTRIBUTOR && user.role !== ROLE_STORE) {
-      replyText(replyToken, '位置情報投稿は「店舗」または「協力者」登録のアカウントで使えます。');
+    if (user.role !== ROLE_STORE) {
+      replyText(replyToken, '位置情報投稿は「店舗」登録のアカウントで使えます。');
       return;
     }
     // 位置付き投稿は「テキスト→写真」の順に統一するため、古い pending が残らないようクリアする
@@ -785,7 +725,7 @@ function handleLocationIncoming(userId, replyToken, lat, lng) {
         : '';
     replyText(
       replyToken,
-      '📍位置を受け取りました。\n【順番】①短文テキスト（50字まで）→②📸写真 →③カテゴリ（あとでボタン）\n写真だけ先に送ると正しく処理できません。' +
+      '📍位置を受け取りました。\n【順番】①短文テキスト（50字まで）→②📸写真\n写真だけ先に送ると正しく処理できません。' +
         tail
     );
   } catch (err) {
@@ -814,12 +754,12 @@ function handleStoreContentText(userId, replyToken, user, text) {
   }
   const truncated = text.substring(0, MAX_MESSAGE_LENGTH);
 
-  // 画像が先に届いていた場合はテキストを合わせてカテゴリへ即進む
+  // 画像が先に届いていた場合はテキストを合わせて即確定
   const pendingImg = loadPending(userId);
   if (pendingImg && pendingImg.imageUrl) {
     deletePending(userId);
     const prev = getSession(userId).payload || {};
-    setSession(userId, STEP_AWAITING_CATEGORY, {
+    proceedToFinalizePost_(userId, replyToken, user, {
       text: truncated,
       imageUrl: pendingImg.imageUrl,
       lat: prev.lat != null ? prev.lat : null,
@@ -827,23 +767,21 @@ function handleStoreContentText(userId, replyToken, user, text) {
       spotId: prev.spotId || '',
       spotName: prev.spotName || ''
     });
-    replyWithCategoryQuickReply(replyToken, '内容を確認しました。カテゴリを選んでください👇');
     return;
   }
 
   // テキストを pending に保存して画像を待つ
   savePending(userId, user.fixedStoreId || '', truncated);
   replyText(replyToken,
-    `📝 受け付けました「${truncated}」\n【順番: テキスト→写真】続けて📸写真を送ってください（${PENDING_EXPIRE_MS / 60000}分以内）\n写真不要ならそのまま待つとカテゴリ選択に進みます。`
+    `📝 受け付けました「${truncated}」\n【順番: テキスト→写真】続けて📸写真を送ってください（${PENDING_EXPIRE_MS / 60000}分以内）\n写真不要ならそのまま待つと自動でマップに反映されます。`
   );
 }
 
-function mergeImageWithPendingThenAskCategory(userId, replyToken, user, imageUrl) {
-  const pending = loadPendingWithGrace(userId); // 期限切れでも猶予内なら取得
+function mergeImageWithPendingThenFinalize(userId, replyToken, user, imageUrl) {
+  const pending = loadPendingWithGrace(userId);
   const text = pending ? String(pending.message || '') : '';
-
   const prev = getSession(userId).payload || {};
-  setSession(userId, STEP_AWAITING_CATEGORY, {
+  proceedToFinalizePost_(userId, replyToken, user, {
     text,
     imageUrl: imageUrl || '',
     lat: prev.lat != null ? prev.lat : null,
@@ -851,39 +789,11 @@ function mergeImageWithPendingThenAskCategory(userId, replyToken, user, imageUrl
     spotId: prev.spotId || '',
     spotName: prev.spotName || ''
   });
-  replyWithCategoryQuickReply(replyToken,
-    (text || imageUrl ? '内容を確認しました。' : '') + 'カテゴリを選んでください👇');
 }
 
-function mergeImageWithPendingThenAskSpot(userId, replyToken, user, imageUrl) {
-  const pending = loadPendingWithGrace(userId); // 期限切れでも猶予内なら取得
-  const text = pending ? String(pending.message || '')  : '';
-
-  if (!text && !imageUrl) {
-    replyText(replyToken, 'テキストか画像を送ってください。');
-    return;
-  }
-
-  setSession(userId, STEP_AWAITING_SPOT, {
-    text, imageUrl: imageUrl || '', lat: null, lng: null, spotId: '', spotName: ''
-  });
-  replyText(replyToken, buildSpotListMessage());
-}
-
-// ==================================================================
-// 運営: テキスト保留 / 画像→スポット一覧
-// ==================================================================
-
-function handleOperatorContentText(userId, replyToken, user, text) {
-  const sess = getSession(userId);
-  if (sess.step === STEP_AWAITING_CATEGORY || sess.step === STEP_AWAITING_SPOT) {
-    replyText(replyToken, 'いまは投稿フローの途中です。案内に従って番号またはカテゴリを選んでください。');
-    return;
-  }
-  const truncated = text.substring(0, MAX_MESSAGE_LENGTH);
-  savePending(userId, '_op_', truncated);
-  replyText(replyToken,
-    `📝 受け付けました「${truncated}」\n【推奨の順: テキスト→写真】続けて📸写真（${PENDING_EXPIRE_MS / 60000}分以内）\n写真のみでも進められます。`);
+function proceedToFinalizePost_(userId, replyToken, user, payload) {
+  setSession(userId, STEP_AWAITING_CATEGORY, payload);
+  finalizePostWithCategory(userId, replyToken, user, DEFAULT_POST_CATEGORY);
 }
 
 // ==================================================================
@@ -900,10 +810,6 @@ function handleContributorContentText(userId, replyToken, user, text) {
         '「📍位置を受け取りました」のあとは、まず短文、そのあと写真を送ってください。\n' +
         '※位置と同時・直後のテキストは届かないことがあります。返信のあとに送ってください。'
     );
-    return;
-  }
-  if (sess.step === STEP_AWAITING_CATEGORY) {
-    replyText(replyToken, 'カテゴリをボタンから選んでください👇');
     return;
   }
   const truncated = text.substring(0, MAX_MESSAGE_LENGTH).trim();
@@ -936,22 +842,7 @@ function handleContributorImage(userId, replyToken, user, messageId) {
     return;
   }
 
-  mergeImageWithPendingThenAskCategory(userId, replyToken, user, imageUrl);
-}
-
-function handleOperatorSpotNumber(userId, replyToken, n) {
-  const spots = getVenueSpots();
-  if (n < 1 || n > spots.length) {
-    replyText(replyToken, `1〜${spots.length} の番号で送ってください。`);
-    return;
-  }
-  const sp = spots[n - 1];
-  const sess = getSession(userId);
-  const p = Object.assign({}, sess.payload, {
-    lat: sp.lat, lng: sp.lng, spotId: sp.spotId, spotName: sp.name
-  });
-  setSession(userId, STEP_AWAITING_CATEGORY, p);
-  replyWithCategoryQuickReply(replyToken, `📍「${sp.name}」に紐づけます。\nカテゴリを選んでください👇`);
+  mergeImageWithPendingThenFinalize(userId, replyToken, user, imageUrl);
 }
 
 // ==================================================================
@@ -959,8 +850,8 @@ function handleOperatorSpotNumber(userId, replyToken, n) {
 // ==================================================================
 
 function finalizePostWithCategory(userId, replyToken, user, category) {
-  if (!ROLE_OPERATOR_ENABLED && user.role === ROLE_OPERATOR) {
-    replyText(replyToken, MSG_LINE_OPERATOR_ROLE_SUSPENDED_);
+  if (user.role !== ROLE_STORE) {
+    if (replyToken !== 'PUSH') replyText(replyToken, MSG_LINE_LEGACY_ROLE_SUSPENDED_);
     deleteSession(userId);
     deletePending(userId);
     return;
@@ -1003,18 +894,11 @@ function finalizePostWithCategory(userId, replyToken, user, category) {
       finalLat = c.lat;
       finalLng = c.lng;
     }
-  } else if (user.role === ROLE_OPERATOR) {
-    sourceType = SOURCE_SELECTED;
-    if (finalLat == null || finalLng == null) {
-      replyText(replyToken, 'スポットが未選択です。');
-      deleteSession(userId);
-      return;
-    }
   } else {
     sourceType = SOURCE_GPS;
-    storeId = '';
+    storeId = user.fixedStoreId || '';
     if (finalLat == null || finalLng == null) {
-      replyText(replyToken, '位置情報がありません。');
+      if (replyToken !== 'PUSH') replyText(replyToken, '位置情報がありません。');
       deleteSession(userId);
       return;
     }
@@ -1022,7 +906,7 @@ function finalizePostWithCategory(userId, replyToken, user, category) {
 
   const postId = Utilities.getUuid();
   const createdAt = new Date();
-  const expiresAt = new Date(createdAt.getTime() + TTL_MS[user.role]);
+  const expiresAt = getPostExpiresAt_(createdAt);
 
   appendPostRow({
     postId, userId, role: user.role, sourceType, category,
@@ -1036,8 +920,12 @@ function finalizePostWithCategory(userId, replyToken, user, category) {
 
   let locHint = '';
   if (spotName) locHint = `\n場所:${spotName}`;
-  replyText(replyToken,
-    `✅ マップに反映しました！\nカテゴリ:${category}${locHint}\n（${formatPostTtlHint_(TTL_MS[user.role])}で自動的に終了します）`);
+  const doneMsg = `✅ マップに反映しました！${locHint}`;
+  if (replyToken === 'PUSH') {
+    pushText(userId, doneMsg);
+  } else {
+    replyText(replyToken, doneMsg);
+  }
 }
 
 // ==================================================================
@@ -1273,49 +1161,6 @@ function getBotSessionSheet(createIfMissing) {
 }
 
 // ==================================================================
-// venue_spots
-// ==================================================================
-
-function getVenueSpotsUncached_() {
-  const ss = getWebhookSpreadsheetCached_();
-  const sheet = ss.getSheetByName(VENUE_SPOTS_SHEET_NAME);
-  if (!sheet) return [];
-  const data = sheet.getDataRange().getValues();
-  const list = [];
-  for (let i = 1; i < data.length; i++) {
-    const spotId = data[i][0] != null ? String(data[i][0]).trim() : '';
-    const name = data[i][1] != null ? String(data[i][1]).trim() : '';
-    const lat = data[i][2];
-    const lng = data[i][3];
-    if (!name || lat == null || lng == null) continue;
-    list.push({
-      spotId: spotId || `spot_${i}`,
-      name,
-      lat: Number(lat),
-      lng: Number(lng)
-    });
-  }
-  return list;
-}
-
-function getVenueSpots() {
-  if (!__webhookVenueSpotsMemoLoaded_) {
-    __webhookVenueSpotsMemoLoaded_ = true;
-    __webhookVenueSpotsMemo_ = getVenueSpotsUncached_();
-  }
-  return __webhookVenueSpotsMemo_;
-}
-
-function buildSpotListMessage() {
-  const spots = getVenueSpots();
-  if (spots.length === 0) {
-    return '⚠️ venue_spots シートにスポットが未登録です。管理者が Google スプレッドシートに追加してください。\n運営投稿はできません。';
-  }
-  const lines = spots.map((s, idx) => `${idx + 1}. ${s.name}`);
-  return `投稿する場所の番号を送ってください（半角数字）\n\n${lines.join('\n')}`;
-}
-
-// ==================================================================
 // マスター座標（先頭シート = gviz 既定と同一）
 // ==================================================================
 
@@ -1456,7 +1301,7 @@ function deletePending(userId) {
 }
 
 /**
- * 期限切れの pending 行を処理してカテゴリ選択へ遷移させる。
+ * 期限切れの pending 行を自動確定して posts に書き込む。
  * excludeUserId を指定した場合、そのユーザーの行はスキップする
  * （画像受信時に自分の pending を先に利用させるため）。
  */
@@ -1473,59 +1318,27 @@ function flushExpiredPending(excludeUserId) {
 
     const userId = data[i][0];
 
-    // 画像受信など、呼び出し元が自分自身の pending を後で使う場合はスキップ
     if (excludeUserId && sheetRowUserIdMatches_(userId, excludeUserId)) continue;
     const message  = data[i][2] ? String(data[i][2]) : '';
     const imageUrl = data[i][4] ? String(data[i][4]) : '';
 
     sheet.deleteRow(i + 1);
 
-    // テキストも画像も空なら何もしない
     if (!message.trim() && !imageUrl) continue;
 
     const user = getUserRecord(userId);
-    if (!user || user.isActive === false) continue;
+    if (!user || user.isActive === false || user.role !== ROLE_STORE) continue;
 
-    const promptMsg = imageUrl && !message.trim()
-      ? '写真を確定しました。カテゴリを選んでください👇'
-      : message.trim() && !imageUrl
-        ? 'テキストを確定しました。カテゴリを選んでください👇'
-        : 'カテゴリを選んでください👇';
+    const sess = getSession(userId);
+    if (sess.payload.lat != null && sess.payload.lng != null && !message.trim() && imageUrl) continue;
 
-    if (user.role === ROLE_STORE) {
-      const sess = getSession(userId);
-      if (sess.payload.lat != null && sess.payload.lng != null) {
-        // GPS 付き店舗投稿もテキスト→写真の順。写真のみの期限切れはカテゴリへ進めない
-        if (!message.trim() && imageUrl) continue;
-        setSession(userId, STEP_AWAITING_CATEGORY, Object.assign({}, sess.payload, {
-          text: message, imageUrl
-        }));
-      } else {
-        setSession(userId, STEP_AWAITING_CATEGORY, {
+    const payload = sess.payload.lat != null && sess.payload.lng != null
+      ? Object.assign({}, sess.payload, { text: message, imageUrl })
+      : {
           text: message, imageUrl, lat: null, lng: null, spotId: '', spotName: '',
           storeId: user.fixedStoreId || ''
-        });
-      }
-      replyWithCategoryQuickReplyPush(userId, promptMsg);
-    } else if (ROLE_OPERATOR_ENABLED && user.role === ROLE_OPERATOR) {
-      setSession(userId, STEP_AWAITING_SPOT, {
-        text: message, imageUrl, lat: null, lng: null, spotId: '', spotName: ''
-      });
-      const spotListMsg = buildSpotListMessage();
-      pushText(userId,
-        spotListMsg.indexOf('⚠️') === 0
-          ? spotListMsg
-          : '📝内容を確定しました。\n' + spotListMsg
-      );
-    } else if (user.role === ROLE_CONTRIBUTOR) {
-      const sess = getSession(userId);
-      if (sess.payload.lat == null || sess.payload.lng == null) continue;
-      if (!message.trim() && imageUrl) continue;
-      setSession(userId, STEP_AWAITING_CATEGORY, Object.assign({}, sess.payload, {
-        text: message, imageUrl
-      }));
-      replyWithCategoryQuickReplyPush(userId, promptMsg);
-    }
+        };
+    proceedToFinalizePost_(userId, 'PUSH', user, payload);
   }
 }
 
@@ -1581,33 +1394,10 @@ function pushMessages(userId, messages) {
   });
 }
 
-function replyWithCategoryQuickReply(replyToken, headerText) {
-  const qr = buildCategoryQuickReply();
-  replyMessages(replyToken, [{ type: 'text', text: headerText, quickReply: qr }]);
-}
-
-function replyWithCategoryQuickReplyPush(userId, headerText) {
-  const qr = buildCategoryQuickReply();
-  pushMessages(userId, [{ type: 'text', text: headerText, quickReply: qr }]);
-}
-
-function buildCategoryQuickReply() {
-  const items = CATEGORIES.map(cat => ({
-    type: 'action',
-    action: {
-      type: 'message',
-      label: cat.length > 12 ? cat.slice(0, 11) + '…' : cat,
-      text: 'カテゴリ:' + cat
-    }
-  }));
-  return { items };
-}
-
-/** 「登録」時: 協力 / 店舗の2ボタン（店舗のみあと1通で店舗名） */
+/** 「登録」時: 店舗ボタン（あと1通で店舗名） */
 function buildRegisterQuickReply() {
   return {
     items: [
-      { type: 'action', action: { type: 'message', label: '協力', text: '登録 協力' } },
       { type: 'action', action: { type: 'message', label: '店舗', text: '登録 店舗' } }
     ]
   };
@@ -1638,13 +1428,6 @@ function replyMessages(replyToken, messages) {
   }
 }
 
-function parseCategoryFromText(text) {
-  const m = /^カテゴリ[:：]\s*(.+)$/.exec(text.trim());
-  if (!m) return null;
-  const name = m[1].trim();
-  return CATEGORIES.indexOf(name) >= 0 ? name : null;
-}
-
 // ==================================================================
 // 登録 / ヘルプ / 管理者
 // ==================================================================
@@ -1673,8 +1456,8 @@ function handleRegisterCommand(userId, replyToken, text) {
 
   const regPwGlobal = getRegistrationPassword_();
 
-  if (sub === '運営' || sub === 'operator') {
-    replyText(replyToken, MSG_LINE_OPERATOR_REGISTRATION_SUSPENDED_);
+  if (sub === '運営' || sub === 'operator' || sub === '協力' || sub === '協力者' || sub === 'contributor') {
+    replyText(replyToken, MSG_LINE_CONTRIBUTOR_REGISTRATION_SUSPENDED_);
     return;
   }
 
@@ -1684,22 +1467,6 @@ function handleRegisterCommand(userId, replyToken, text) {
       return;
     }
     beginStoreRegistrationFlow_(userId, replyToken);
-    return;
-  }
-
-  if (sub === '協力' || sub === '協力者' || sub === 'contributor') {
-    if (canRegisterSpecialRoles(userId, specialPw)) {
-      saveUserRecord(userId, ROLE_CONTRIBUTOR, '');
-      setSession(userId, STEP_IDLE, { text: '', imageUrl: '', lat: null, lng: null, spotId: '', spotName: '' });
-      replyText(replyToken, MSG_LINE_REGISTERED_CONTRIBUTOR_OK_);
-      return;
-    }
-    if (regPwGlobal && !specialPw) {
-      setSession(userId, STEP_AWAITING_REGISTRATION_PASSWORD, { regKind: 'contributor' });
-      replyText(replyToken, MSG_LINE_REGISTRATION_PASSWORD_NEXT_);
-      return;
-    }
-    replyText(replyToken, '🔒 協力者登録には管理者または登録パスワードが必要です。');
     return;
   }
 
@@ -1754,15 +1521,9 @@ function handleRegistrationPasswordReply(userId, replyToken, passwordText) {
   }
 
   const kind = sess.payload && sess.payload.regKind;
-  if (kind === 'operator') {
+  if (kind === 'contributor' || kind === 'operator') {
     deleteSession(userId);
-    replyText(replyToken, MSG_LINE_OPERATOR_REGISTRATION_SUSPENDED_);
-    return;
-  }
-  if (kind === 'contributor') {
-    saveUserRecord(userId, ROLE_CONTRIBUTOR, '');
-    setSession(userId, STEP_IDLE, { text: '', imageUrl: '', lat: null, lng: null, spotId: '', spotName: '' });
-    replyText(replyToken, MSG_LINE_REGISTERED_CONTRIBUTOR_OK_);
+    replyText(replyToken, MSG_LINE_CONTRIBUTOR_REGISTRATION_SUSPENDED_);
     return;
   }
   if (kind === 'store') {
@@ -1796,11 +1557,7 @@ function handleCheckCommand(userId, replyToken) {
   }
   let detail = '';
   if (u.role === ROLE_STORE) detail = `店舗名: ${u.fixedStoreId}`;
-  else if (u.role === ROLE_OPERATOR) {
-    detail = ROLE_OPERATOR_ENABLED
-      ? '運営（スポット選択）'
-      : '運営（現在停止中・登録解除して協力または店舗へ）';
-  } else detail = '協力者（📍位置→短文テキスト→📸写真→カテゴリ）';
+  else detail = '（旧ロール・登録解除して店舗として再登録してください）';
 
   replyText(replyToken,
     `📋 登録状況\nロール:${u.role}\n${detail}\n有効:${u.isActive !== false}`);
@@ -1868,7 +1625,7 @@ function handleAdminTestPost(replyToken, adminUserId) {
     storeId: u.fixedStoreId,
     spotId: '',
     createdAt,
-    expiresAt: new Date(createdAt.getTime() + TTL_MS[ROLE_STORE]),
+    expiresAt: getPostExpiresAt_(createdAt),
     isVisible: true
   });
   replyText(replyToken, '✅ posts にテスト行を書き込みしました');
@@ -1886,7 +1643,7 @@ function buildMyIdMessage(userId) {
 
 function buildUnknownUserMessage(userId) {
   return (
-    `👋 未登録です。\nあなたのID:\n${userId}\n\n「ヘルプ」でコマンドを確認し、「登録」から協力者または店舗として登録してください。`
+    `👋 未登録です。\nあなたのID:\n${userId}\n\n「ヘルプ」でコマンドを確認し、「登録」から店舗として登録してください。`
   );
 }
 
@@ -1900,19 +1657,14 @@ function buildHelpMessage(userId) {
   const u = getUserRecord(userId);
   if (!u) {
     flow =
-      '🗺️ このあと「登録」から協力者または店舗として登録すると投稿できます。\n' +
+      '🗺️ このあと「登録」から店舗として登録すると投稿できます。\n' +
       'マップモデレーション: posts の isVisible を編集できます。';
   } else if (u.role === ROLE_STORE) {
     flow =
-      '📝 店舗投稿の順番: 短文テキスト→📸写真→カテゴリ（ボタン）\n座標はスプレッドシート側のお店情報を使用します。\n' +
-      '📍移動中の投稿の順番: 📍位置情報→短文テキスト→📸写真→カテゴリ（現在地がマップに出ます）';
-  } else if (u.role === ROLE_OPERATOR) {
-    flow = ROLE_OPERATOR_ENABLED
-      ? '📝 運営投稿の順番: 短文テキストまたは📸写真→番号でスポット→カテゴリ\n⚠️ venue_spots にスポットを登録しておいてください'
-      : MSG_LINE_OPERATOR_ROLE_SUSPENDED_;
+      '📝 店舗投稿の順番: 短文テキスト→📸写真\n座標はスプレッドシート側のお店情報を使用します。\n' +
+      '📍移動中の投稿の順番: 📍位置情報→短文テキスト→📸写真（現在地がマップに出ます）';
   } else {
-    flow =
-      '📝 協力者投稿の順番: 📍位置情報→短文テキスト→📸写真→カテゴリ（テキストを先に、続けて写真）';
+    flow = MSG_LINE_LEGACY_ROLE_SUSPENDED_;
   }
   return head + flow + `\n\n文字数:${MAX_MESSAGE_LENGTH}文字まで`;
 }
@@ -1957,7 +1709,7 @@ function ensureMasterSheetIsGvizFirst_(ss) {
 function findMasterSheetForGviz_(ss) {
   const reserved = {};
   [
-    USER_MAP_SHEET_NAME, POSTS_SHEET_NAME, VENUE_SPOTS_SHEET_NAME,
+    USER_MAP_SHEET_NAME, POSTS_SHEET_NAME,
     BOT_SESSIONS_SHEET_NAME, PENDING_SHEET_NAME
   ].forEach(n => { reserved[n] = true; });
 
@@ -2007,32 +1759,6 @@ function setupSheets() {
     ensurePostsSheet(ss);
     console.log('✅ posts');
   }
-  if (!ss.getSheetByName(VENUE_SPOTS_SHEET_NAME)) {
-    const s = insertSheetAtEnd_(ss, VENUE_SPOTS_SHEET_NAME);
-    s.appendRow(['spotId', 'name', 'lat', 'lng', 'type']);
-    s.setFrozenRows(1);
-    s.getRange('A1:E1').setBackground('#1565C0').setFontColor('#FFFFFF').setFontWeight('bold');
-    console.log('✅ venue_spots');
-  }
-
-  const EVENT_SHEET = 'event_schedule';
-  if (!ss.getSheetByName(EVENT_SHEET)) {
-    const s = insertSheetAtEnd_(ss, EVENT_SHEET);
-    s.appendRow([
-      'event_id', 'title', 'start_at', 'lat', 'lng',
-      'emoji', 'duration_minutes', 'lead_minutes', 'hidden', 'title_en',
-      'image_url'
-    ]);
-    s.appendRow([
-      'ev_001', '大道芸', '2026-07-19 12:00:00',
-      34.6801, 138.9430, '🎪', 60, 30, '', 'Street Performance',
-      ''
-    ]);
-    s.setFrozenRows(1);
-    s.getRange('A1:K1').setBackground('#E65100').setFontColor('#FFFFFF').setFontWeight('bold');
-    console.log('✅ event_schedule');
-  }
-
   ensureMasterSheetIsGvizFirst_(ss);
   console.log('setupSheets OK');
 }
@@ -2120,7 +1846,7 @@ function testAppend() {
     storeId: 'test',
     spotId: '',
     createdAt: new Date(),
-    expiresAt: new Date(Date.now() + TTL_MS[ROLE_STORE]),
+    expiresAt: getPostExpiresAt_(new Date()),
     isVisible: true
   });
 }
