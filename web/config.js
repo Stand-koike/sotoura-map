@@ -74,11 +74,6 @@
         POSTS_SHEET: secrets.POSTS_SHEET || 'posts',
         LIVE_POST_POLL_INTERVAL: 30000,
 
-        EVENTS_SHEET:                 secrets.EVENTS_SHEET || 'event_schedule',
-        EVENT_SCHEDULE_LEAD_MINUTES:  30,
-        EVENT_SCHEDULE_POLL_INTERVAL: 60000,
-        EVENT_SCHEDULE_TICK_MS:       60000,
-
         TRANSLATIONS: {
             ja: {
                 all: 'すべて', go: 'Google Mapsで見る', coupon: 'クーポンを使う',
