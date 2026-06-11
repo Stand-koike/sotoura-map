@@ -1,6 +1,6 @@
 /**
  * ============================================================
- * 下田MAP — 対象シート一括作成 & ダミーデータ投入（GAS）
+ * 外浦MAP — 対象シート一括作成 & ダミーデータ投入（GAS）
  * ============================================================
  *
  * 用途: 新規スプレッドシートで「ブラウザ gviz 先頭シート（店舗マスタ）」＋
@@ -14,7 +14,8 @@
  *
  * 注意:
  *   - ダミー投入は「マスタにデータ行が無いとき」のみ行います（既存行は消しません）。
- *   - posts / venue_spots に既に行がある場合は、ダミー行は追加しません（重複防止）。
+ *   - posts に既に行がある場合は、ダミー行は追加しません（重複防止）。
+ *   - venue_spots は外浦では未使用（既存シートがあっても触らない）。
  *   - 補助シートはすべて「末尾」に作成します（片引数 insertSheet の先頭挿入で gviz が壊れるのを防ぐ）。
  *   - 万一マスタが先頭でない場合だけ、実行末尾で先頭へ移動します。
  *
@@ -24,13 +25,16 @@
  */
 const SETUP_SHEET_ID_FALLBACK = 'YOUR_GOOGLE_SHEET_ID';
 
-/** webhook の *_SHEET_NAME と同じ値だが、同名 const を二重宣言しないよう 1 オブジェクトにまとめる */
+/**
+ * シート名（web/line-contract.js LINE_SHEETS と同期）
+ * VENUE はレガシー予約名のみ（新規作成しない）
+ */
 const SETUP_NAMES = {
-  POSTS: 'posts',
-  VENUE: 'venue_spots',
-  BOT: 'bot_sessions',
+  POSTS:    'posts',
   USER_MAP: 'user_map',
-  PENDING: 'pending_posts'
+  BOT:      'bot_sessions',
+  PENDING:  'pending_posts',
+  VENUE:    'venue_spots'
 };
 
 const SETUP_ROLES = {
@@ -91,10 +95,8 @@ function setupAllSheetsWithDummyDataCore_() {
   ensurePendingSheet_(ss);
   ensureBotSessionSheet_(ss);
   ensurePostsSheet_(ss);
-  ensureVenueSheet_(ss);
 
   seedDummyPostsIfEmpty_(ss);
-  seedDummyVenuesIfEmpty_(ss);
 
   moveMasterToGvizFirst_(ss, master);
 
@@ -257,12 +259,12 @@ function ensurePostsSheet_(ss) {
   if (ss.getSheetByName(SETUP_NAMES.POSTS)) return;
   const s = setupInsertSheetAtEnd_(ss, SETUP_NAMES.POSTS);
   s.appendRow([
-    'postId', 'userId', 'role', 'sourceType', 'category',
-    'text', 'imageUrl', 'lat', 'lng', 'storeId', 'spotId',
-    'createdAt', 'expiresAt', 'isVisible'
+    'postId', 'userId', 'role', 'sourceType', 'title',
+    'text', 'imageUrl', 'lat', 'lng', 'storeId',
+    'createdAt', 'isVisible'
   ]);
   s.setFrozenRows(1);
-  styleHeaderRow_(s, 1, 14, '#2E7D32');
+  styleHeaderRow_(s, 1, 12, '#2E7D32');
 }
 
 function ensureVenueSheet_(ss) {
@@ -278,21 +280,18 @@ function seedDummyPostsIfEmpty_(ss) {
   if (!sheet || sheet.getLastRow() > 1) return;
 
   const now = new Date();
-  const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
 
   sheet.appendRow([
     Utilities.getUuid(),
     'DUMMY_GAS_USER',
     SETUP_ROLES.STORE,
     SETUP_SOURCE.FIXED,
-    'お知らせ',
-    'ダミーLIVE（店舗紐づけ・demo-001）',
+    '本日のおすすめ',
+    'ダミーかわら版（店舗紐づけ・demo-001）',
     '',
     '', '',
     'demo-001',
-    '',
     now,
-    tomorrow,
     true
   ]);
 
@@ -301,15 +300,13 @@ function seedDummyPostsIfEmpty_(ss) {
     'DUMMY_GAS_OP',
     SETUP_ROLES.OPERATOR,
     SETUP_SOURCE.SELECTED,
-    '混雑',
-    'ダミーLIVE（会場スポット・vs-stage）',
+    '会場の様子',
+    'ダミーかわら版（会場スポット）',
     '',
     34.6762,
     138.9430,
     '',
-    'vs-stage',
     now,
-    tomorrow,
     true
   ]);
 
@@ -318,15 +315,13 @@ function seedDummyPostsIfEmpty_(ss) {
     'DUMMY_GAS_GPS',
     SETUP_ROLES.CONTRIBUTOR,
     SETUP_SOURCE.GPS,
-    '景色',
-    'ダミーLIVE（GPS 独立マーカー）',
+    '外浦の景色',
+    'ダミーかわら版（GPS 独立マーカー）',
     '',
     34.6720,
     138.9395,
     '',
-    '',
     now,
-    tomorrow,
     true
   ]);
 

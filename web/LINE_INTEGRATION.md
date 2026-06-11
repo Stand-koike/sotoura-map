@@ -1,6 +1,14 @@
 # LINE 連携の仕様（外浦MAP）
 
-実装の正は [gas-line-webhook.js](gas-line-webhook.js) とメイン [index.html](index.html) の `PostsModule` です。改修する際は**両方**の列順・ロール名・`sourceType` の整合を保ってください。
+**契約の正本:** [line-contract.js](line-contract.js)（シート名・列 index・ロール・sourceType）
+
+| 実装 | 役割 |
+|------|------|
+| [line-contract.js](line-contract.js) | フロント用契約（`config.js` が読み込み） |
+| [gas-line-webhook.js](gas-line-webhook.js) 先頭 `LINE_*` | GAS 用契約（単体デプロイのためコピー保持） |
+| [index.html](index.html) `PostsModule` | posts シートの gviz 読み取り |
+
+改修時は **line-contract.js と GAS の `LINE_*` を同期**し、列順・ロール名・`sourceType` の整合を保ってください。
 
 ---
 

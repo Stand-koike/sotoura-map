@@ -1,6 +1,7 @@
 /**
  * ============================================================
- * LINE → GAS → Google Sheets（黒船祭 LIVEマップ / 複数ロール投稿）
+ * LINE → GAS → Google Sheets（外浦MAP / 店舗投稿）
+ * 契約定義: web/line-contract.js（GAS 先頭 LINE_* と同期）
  * ============================================================
  *
  * 【秘密情報・運用（本番）】
@@ -21,6 +22,18 @@
  *
  * 【スプレッドシートでのモデレーション】
  *   posts シートの isVisible を FALSE にするとマップから非表示。
+ *
+ * 【posts シート列構成（12列・かわら版）】
+ *   postId | userId | role | sourceType | title | text | imageUrl |
+ *   lat | lng | storeId | createdAt | isVisible
+ *
+ * 【既存 posts シートの手動マイグレーション】
+ *   1. E列に title 列を挿入（ヘッダー: title）
+ *   2. 旧 category 列（E列）のデータは不要なら削除
+ *   3. spotId 列・expiresAt 列を削除
+ *   4. isVisible が最終列（L列）になるよう並べ替え
+ *   5. setupSheets() を実行してヘッダー行を確認
+ *   旧14列: postId…category,text,…,spotId,createdAt,expiresAt,isVisible
  */
 
 // ---------------------------------------------------------------
@@ -31,6 +44,76 @@ const WEBHOOK_CONFIG = {
   SHEET_ID: '',
   LINE_CHANNEL_ACCESS_TOKEN: ''
 };
+
+// ----------------------------------------------------------------
+// LINE 契約（web/line-contract.js と同期 — GAS は単体デプロイのためここに保持）
+// ----------------------------------------------------------------
+const LINE_SCRIPT_PROPS = {
+  SHEET_ID:     ['SHEET_ID', 'YOUR_GOOGLE_SHEET_ID'],
+  LINE_TOKEN:   ['LINE_CHANNEL_ACCESS_TOKEN', 'YOUR_LINE_CHANNEL_ACCESS_TOKEN'],
+  ADMIN_USER:   'ADMIN_LINE_USER_ID',
+  REG_PASSWORD: 'REGISTRATION_PASSWORD'
+};
+
+const LINE_SHEETS = {
+  POSTS:        'posts',
+  USER_MAP:     'user_map',
+  BOT_SESSIONS: 'bot_sessions',
+  PENDING:      'pending_posts'
+};
+
+/** posts シート列（0-indexed）— gviz row.c / getValues 共通 */
+const LINE_POSTS_COL = {
+  POST_ID: 0, USER_ID: 1, ROLE: 2, SOURCE_TYPE: 3, TITLE: 4, TEXT: 5,
+  IMAGE_URL: 6, LAT: 7, LNG: 8, STORE_ID: 9, CREATED_AT: 10, IS_VISIBLE: 11
+};
+
+const LINE_USER_MAP_COL = {
+  USER_ID: 0, ROLE: 1, FIXED_STORE_ID: 2, IS_ACTIVE: 3,
+  DISPLAY_NAME: 4, REGISTERED_AT: 5
+};
+
+const LINE_BOT_SESSION_COL = {
+  USER_ID: 0, STEP: 1, PAYLOAD_JSON: 2, UPDATED_AT: 3
+};
+
+const LINE_PENDING_COL = {
+  USER_ID: 0, STORE_ID: 1, MESSAGE: 2, IMAGE_URL: 3, SAVED_AT: 4
+};
+
+/** 店舗マスタ — config.js COLS.STORE_ID(11) と一致 */
+const LINE_MASTER_COL = {
+  NAME: 1, LAT: 2, LNG: 3, STORE_ID: 11
+};
+
+const LINE_LIMITS = {
+  MAX_TITLE_LENGTH:    14,
+  MAX_MESSAGE_LENGTH:  50,
+  MAX_IMAGE_SIZE_BYTES: 5 * 1024 * 1024,
+  PENDING_EXPIRE_MS:   60 * 1000,
+  PENDING_LOAD_GRACE_MS: 5 * 60 * 1000
+};
+
+const ROLE_STORE = 'store';
+const ROLE_CONTRIBUTOR = 'contributor';
+const KNOWN_ROLE_VALUES = [ROLE_STORE, ROLE_CONTRIBUTOR];
+
+const DRIVE_FOLDER_NAME = 'LINE_MAP_IMAGES';
+
+/** @deprecated LINE_* 定数を直接参照すること */
+const MASTER_COL_NAME = LINE_MASTER_COL.NAME;
+const MASTER_COL_LAT = LINE_MASTER_COL.LAT;
+const MASTER_COL_LNG = LINE_MASTER_COL.LNG;
+const MASTER_COL_STORE_ID = LINE_MASTER_COL.STORE_ID;
+const POSTS_SHEET_NAME = LINE_SHEETS.POSTS;
+const BOT_SESSIONS_SHEET_NAME = LINE_SHEETS.BOT_SESSIONS;
+const USER_MAP_SHEET_NAME = LINE_SHEETS.USER_MAP;
+const PENDING_SHEET_NAME = LINE_SHEETS.PENDING;
+const MAX_TITLE_LENGTH = LINE_LIMITS.MAX_TITLE_LENGTH;
+const MAX_MESSAGE_LENGTH = LINE_LIMITS.MAX_MESSAGE_LENGTH;
+const MAX_IMAGE_SIZE_BYTES = LINE_LIMITS.MAX_IMAGE_SIZE_BYTES;
+const PENDING_EXPIRE_MS = LINE_LIMITS.PENDING_EXPIRE_MS;
+
 /** setup Sheets でアクティブ表から補完した ID（その実行中だけ） */
 var __webhookSheetIdRuntimeOverride_ = '';
 
@@ -42,22 +125,29 @@ var __webhookSheetIdRuntimeOverride_ = '';
 /** 同一実行内の getWebhookSheetId_ 結果（webhook イベント開始時にクリア） */
 var __webhookSheetIdMemo_ = undefined;
 
+/** スクリプトプロパティを優先キー順で読む（YOUR_* プレースホルダは無視） */
+function readScriptPropertyFromKeyList_(keyList) {
+  if (!keyList || !keyList.length) return '';
+  var props = PropertiesService.getScriptProperties();
+  for (var i = 0; i < keyList.length; i++) {
+    var raw = props.getProperty(keyList[i]);
+    if (!raw) continue;
+    var p = String(raw).trim();
+    if (p && !/^YOUR_/i.test(p)) return p;
+  }
+  return '';
+}
+
 function getWebhookSheetId_() {
   if (__webhookSheetIdMemo_ !== undefined) return __webhookSheetIdMemo_;
   if (__webhookSheetIdRuntimeOverride_) {
     __webhookSheetIdMemo_ = __webhookSheetIdRuntimeOverride_;
     return __webhookSheetIdMemo_;
   }
-  var props = PropertiesService.getScriptProperties();
-  var keys = ['SHEET_ID', 'YOUR_GOOGLE_SHEET_ID'];
-  for (var i = 0; i < keys.length; i++) {
-    var raw = props.getProperty(keys[i]);
-    if (!raw) continue;
-    var p = String(raw).trim();
-    if (p && p !== 'YOUR_GOOGLE_SHEET_ID' && !/^YOUR_/i.test(p)) {
-      __webhookSheetIdMemo_ = p;
-      return __webhookSheetIdMemo_;
-    }
+  var sheetId = readScriptPropertyFromKeyList_(LINE_SCRIPT_PROPS.SHEET_ID);
+  if (sheetId) {
+    __webhookSheetIdMemo_ = sheetId;
+    return __webhookSheetIdMemo_;
   }
   var c = String(WEBHOOK_CONFIG.SHEET_ID || '').trim();
   if (c && c !== 'YOUR_GOOGLE_SHEET_ID' && !/^YOUR_/i.test(c)) {
@@ -144,16 +234,10 @@ var __webhookLineTokenMemo_ = undefined;
 
 function getWebhookLineToken_() {
   if (__webhookLineTokenMemo_ !== undefined) return __webhookLineTokenMemo_;
-  var props = PropertiesService.getScriptProperties();
-  var keys = ['LINE_CHANNEL_ACCESS_TOKEN', 'YOUR_LINE_CHANNEL_ACCESS_TOKEN'];
-  for (var i = 0; i < keys.length; i++) {
-    var raw = props.getProperty(keys[i]);
-    if (!raw) continue;
-    var p = String(raw).trim();
-    if (p && p !== 'YOUR_LINE_CHANNEL_ACCESS_TOKEN' && !/^YOUR_/i.test(p)) {
-      __webhookLineTokenMemo_ = p;
-      return __webhookLineTokenMemo_;
-    }
+  var token = readScriptPropertyFromKeyList_(LINE_SCRIPT_PROPS.LINE_TOKEN);
+  if (token) {
+    __webhookLineTokenMemo_ = token;
+    return __webhookLineTokenMemo_;
   }
   var c = String(WEBHOOK_CONFIG.LINE_CHANNEL_ACCESS_TOKEN || '').trim();
   if (c && c !== 'YOUR_LINE_CHANNEL_ACCESS_TOKEN' && !/^YOUR_/i.test(c)) {
@@ -169,7 +253,7 @@ var __webhookAdminIdMemo_ = undefined;
 
 function getAdminLineUserId_() {
   if (__webhookAdminIdMemo_ !== undefined) return __webhookAdminIdMemo_;
-  var p = PropertiesService.getScriptProperties().getProperty('ADMIN_LINE_USER_ID');
+  var p = PropertiesService.getScriptProperties().getProperty(LINE_SCRIPT_PROPS.ADMIN_USER);
   __webhookAdminIdMemo_ = p != null ? String(p).trim() : '';
   return __webhookAdminIdMemo_;
 }
@@ -179,35 +263,19 @@ var __webhookRegPwMemo_ = undefined;
 
 function getRegistrationPassword_() {
   if (__webhookRegPwMemo_ !== undefined) return __webhookRegPwMemo_;
-  var p = PropertiesService.getScriptProperties().getProperty('REGISTRATION_PASSWORD');
+  var p = PropertiesService.getScriptProperties().getProperty(LINE_SCRIPT_PROPS.REG_PASSWORD);
   __webhookRegPwMemo_ = p != null ? String(p).trim() : '';
   return __webhookRegPwMemo_;
 }
 
-// メインスポット列（browser CONFIG.COLS と一致する 0-based index）
-// A=_reserved, B=name(1), C=lat(2), D=lng(3) … M=store_id(11) — config.js COLS.STORE_ID と一致
-const MASTER_COL_NAME = 1;
-const MASTER_COL_LAT = 2;
-const MASTER_COL_LNG = 3;
-const MASTER_COL_STORE_ID = 11;
-
-const POSTS_SHEET_NAME = 'posts';
-const BOT_SESSIONS_SHEET_NAME = 'bot_sessions';
-const USER_MAP_SHEET_NAME = 'user_map';
-const PENDING_SHEET_NAME = 'pending_posts';
-
-const MAX_MESSAGE_LENGTH = 50;
-const MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024;
-const DRIVE_FOLDER_NAME = 'LINE_MAP_IMAGES';
-const PENDING_EXPIRE_MS = 1 * 60 * 1000;
-
-const ROLE_STORE = 'store';
-const ROLE_CONTRIBUTOR = 'contributor';
-/** user_map の B 列が拡張形式として解釈される role 値（レガシー行互換） */
-const KNOWN_ROLE_VALUES = [ROLE_STORE, ROLE_CONTRIBUTOR];
-
-/** カテゴリ選択は廃止。posts.category には固定値を入れる */
-const DEFAULT_POST_CATEGORY = 'お知らせ';
+/** 1行目=タイトル(14字以内)、2行目以降=本文(50字以内) */
+function splitTitleAndBody_(text) {
+  const raw = String(text == null ? '' : text);
+  const lines = raw.split(/\r?\n/);
+  const title = lines[0].substring(0, MAX_TITLE_LENGTH).trim();
+  const body = lines.slice(1).join('\n').substring(0, MAX_MESSAGE_LENGTH).trim();
+  return { title: title, body: body };
+}
 
 const STEP_IDLE = 'idle';
 const STEP_AWAITING_CONTENT = 'awaiting_content';
@@ -489,7 +557,18 @@ function doPost(e) {
   }
 }
 
-function doGet() {
+function doGet(e) {
+  const action = e && e.parameter && e.parameter.action;
+  if (action === 'posts') {
+    const data = getPostsForApi_();
+    const callback = e.parameter.callback;
+    const json = JSON.stringify(data);
+    const out = callback ? `${callback}(${json})` : json;
+    return ContentService.createTextOutput(out)
+      .setMimeType(callback
+        ? ContentService.MimeType.JAVASCRIPT
+        : ContentService.MimeType.JSON);
+  }
   return ContentService.createTextOutput('OK').setMimeType(ContentService.MimeType.TEXT);
 }
 
@@ -696,7 +775,8 @@ function handleLocationIncoming(userId, replyToken, lat, lng) {
       replyText(replyToken,
         `📍 位置情報を登録しました（${storeId}）\n` +
         `これでライブ投稿が可能になりました🎉\n\n` +
-        `投稿の順番: 短文テキスト → 📸写真 です。\n` +
+        `投稿の順番: テキスト→📸写真 です。\n` +
+        `テキストは1行目=タイトル(14字)、2行目以降=本文(50字)\n` +
         `お店から離れた場所から投稿するときは、先に📍位置情報を送ってから、同じ順番でお願いします。`);
       return;
     }
@@ -725,7 +805,7 @@ function handleLocationIncoming(userId, replyToken, lat, lng) {
         : '';
     replyText(
       replyToken,
-      '📍位置を受け取りました。\n【順番】①短文テキスト（50字まで）→②📸写真\n写真だけ先に送ると正しく処理できません。' +
+      '📍位置を受け取りました。\n【順番】①テキスト（1行目=タイトル14字、2行目以降=本文50字）→②📸写真\n写真だけ先に送ると正しく処理できません。' +
         tail
     );
   } catch (err) {
@@ -752,7 +832,7 @@ function handleStoreContentText(userId, replyToken, user, text) {
   if (s0.payload.lat != null && s0.payload.lng != null) {
     deleteSession(userId);
   }
-  const truncated = text.substring(0, MAX_MESSAGE_LENGTH);
+  const rawText = text.substring(0, MAX_TITLE_LENGTH + 1 + MAX_MESSAGE_LENGTH);
 
   // 画像が先に届いていた場合はテキストを合わせて即確定
   const pendingImg = loadPending(userId);
@@ -760,7 +840,7 @@ function handleStoreContentText(userId, replyToken, user, text) {
     deletePending(userId);
     const prev = getSession(userId).payload || {};
     proceedToFinalizePost_(userId, replyToken, user, {
-      text: truncated,
+      text: rawText,
       imageUrl: pendingImg.imageUrl,
       lat: prev.lat != null ? prev.lat : null,
       lng: prev.lng != null ? prev.lng : null,
@@ -771,9 +851,10 @@ function handleStoreContentText(userId, replyToken, user, text) {
   }
 
   // テキストを pending に保存して画像を待つ
-  savePending(userId, user.fixedStoreId || '', truncated);
+  savePending(userId, user.fixedStoreId || '', rawText);
+  const preview = rawText.split(/\r?\n/)[0].substring(0, 20);
   replyText(replyToken,
-    `📝 受け付けました「${truncated}」\n【順番: テキスト→写真】続けて📸写真を送ってください（${PENDING_EXPIRE_MS / 60000}分以内）\n写真不要ならそのまま待つと自動でマップに反映されます。`
+    `📝 受け付けました「${preview}」\n【順番: テキスト→写真】続けて📸写真を送ってください（${PENDING_EXPIRE_MS / 60000}分以内）\n写真不要ならそのまま待つと自動でマップに反映されます。`
   );
 }
 
@@ -793,7 +874,7 @@ function mergeImageWithPendingThenFinalize(userId, replyToken, user, imageUrl) {
 
 function proceedToFinalizePost_(userId, replyToken, user, payload) {
   setSession(userId, STEP_AWAITING_CATEGORY, payload);
-  finalizePostWithCategory(userId, replyToken, user, DEFAULT_POST_CATEGORY);
+  finalizePostWithCategory(userId, replyToken, user);
 }
 
 // ==================================================================
@@ -849,7 +930,7 @@ function handleContributorImage(userId, replyToken, user, messageId) {
 // 投稿確定
 // ==================================================================
 
-function finalizePostWithCategory(userId, replyToken, user, category) {
+function finalizePostWithCategory(userId, replyToken, user) {
   if (user.role !== ROLE_STORE) {
     if (replyToken !== 'PUSH') replyText(replyToken, MSG_LINE_LEGACY_ROLE_SUSPENDED_);
     deleteSession(userId);
@@ -862,8 +943,11 @@ function finalizePostWithCategory(userId, replyToken, user, category) {
     return;
   }
   const { text, imageUrl, lat, lng, spotId, spotName } = sess.payload;
-  if (!text && !imageUrl) {
-    replyText(replyToken, 'テキストか画像がありません。最初から送り直してください。');
+  const split = splitTitleAndBody_(text || '');
+  const title = split.title;
+  const body = split.body;
+  if (!title && !body && !imageUrl) {
+    replyText(replyToken, 'タイトル・本文か画像がありません。最初から送り直してください。');
     deleteSession(userId);
     return;
   }
@@ -872,7 +956,6 @@ function finalizePostWithCategory(userId, replyToken, user, category) {
   let finalLat = lat;
   let finalLng = lng;
   let storeId = '';
-  let spotIdOut = spotId || '';
 
   if (user.role === ROLE_STORE) {
     storeId = user.fixedStoreId || '';
@@ -906,13 +989,12 @@ function finalizePostWithCategory(userId, replyToken, user, category) {
 
   const postId = Utilities.getUuid();
   const createdAt = new Date();
-  const expiresAt = getPostExpiresAt_(createdAt);
 
   appendPostRow({
-    postId, userId, role: user.role, sourceType, category,
-    text: text || '', imageUrl: imageUrl || '',
-    lat: finalLat, lng: finalLng, storeId, spotId: spotIdOut,
-    createdAt, expiresAt, isVisible: true
+    postId, userId, role: user.role, sourceType,
+    title, text: body, imageUrl: imageUrl || '',
+    lat: finalLat, lng: finalLng, storeId,
+    createdAt, isVisible: true
   });
 
   deleteSession(userId);
@@ -945,15 +1027,13 @@ function appendPostRow(row) {
     row.userId,
     row.role,
     row.sourceType,
-    row.category,
-    row.text,
-    row.imageUrl,
+    row.title || '',
+    row.text || '',
+    row.imageUrl || '',
     row.lat,
     row.lng,
     row.storeId,
-    row.spotId,
     row.createdAt,
-    row.expiresAt,
     row.isVisible === false ? false : true
   ]);
 }
@@ -961,12 +1041,54 @@ function appendPostRow(row) {
 function ensurePostsSheet(ss) {
   const s = insertSheetAtEnd_(ss, POSTS_SHEET_NAME);
   s.appendRow([
-    'postId', 'userId', 'role', 'sourceType', 'category',
-    'text', 'imageUrl', 'lat', 'lng', 'storeId', 'spotId',
-    'createdAt', 'expiresAt', 'isVisible'
+    'postId', 'userId', 'role', 'sourceType', 'title',
+    'text', 'imageUrl', 'lat', 'lng', 'storeId',
+    'createdAt', 'isVisible'
   ]);
   s.setFrozenRows(1);
-  s.getRange('A1:N1').setBackground('#2E7D32').setFontColor('#FFFFFF').setFontWeight('bold');
+  s.getRange('A1:L1').setBackground('#2E7D32').setFontColor('#FFFFFF').setFontWeight('bold');
+}
+
+/**
+ * WordPress / 外部連携用 JSON（isVisible=TRUE の行のみ、新しい順）
+ */
+function getPostsForApi_() {
+  const ss = getWebhookSpreadsheetCached_();
+  const sheet = ss.getSheetByName(POSTS_SHEET_NAME);
+  if (!sheet) {
+    return { posts: [], updatedAt: new Date().toISOString() };
+  }
+  const data = sheet.getDataRange().getValues();
+  const posts = [];
+  for (let i = 1; i < data.length; i++) {
+    const row = data[i];
+    const C = LINE_POSTS_COL;
+    if (!row[C.POST_ID]) continue;
+    const isVisibleRaw = row[C.IS_VISIBLE];
+    if (isVisibleRaw === false || String(isVisibleRaw).toUpperCase() === 'FALSE') continue;
+    const title = row[C.TITLE] != null ? String(row[C.TITLE]).trim() : '';
+    const text = row[C.TEXT] != null ? String(row[C.TEXT]).trim() : '';
+    const imageUrl = row[C.IMAGE_URL] != null ? String(row[C.IMAGE_URL]).trim() : '';
+    if (!title && !text && !imageUrl) continue;
+    const createdAt = row[C.CREATED_AT];
+    posts.push({
+      postId: String(row[C.POST_ID]),
+      userId: row[C.USER_ID] != null ? String(row[C.USER_ID]) : '',
+      role: row[C.ROLE] != null ? String(row[C.ROLE]) : '',
+      sourceType: row[C.SOURCE_TYPE] != null ? String(row[C.SOURCE_TYPE]) : '',
+      title,
+      text,
+      imageUrl,
+      lat: row[C.LAT],
+      lng: row[C.LNG],
+      storeId: row[C.STORE_ID] != null ? String(row[C.STORE_ID]).trim() : '',
+      createdAt: createdAt instanceof Date
+        ? createdAt.toISOString()
+        : String(createdAt || '')
+    });
+  }
+  posts.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  return { posts, updatedAt: new Date().toISOString() };
 }
 
 // ==================================================================
@@ -975,30 +1097,31 @@ function ensurePostsSheet(ss) {
 // ==================================================================
 
 function parseUserRow(row) {
-  if (!row || !row[0]) return null;
-  const B = row[1];
+  const C = LINE_USER_MAP_COL;
+  if (!row || !row[C.USER_ID]) return null;
+  const B = row[C.ROLE];
   const bStr = B != null ? String(B).trim() : '';
 
   if (KNOWN_ROLE_VALUES.indexOf(bStr) >= 0) {
-    const activeCell = row[3];
+    const activeCell = row[C.IS_ACTIVE];
     const isActive = activeCell !== false && String(activeCell || 'TRUE').toUpperCase() !== 'FALSE';
     return {
-      userId: normalizeWebhookUserIdForSheet_(row[0]),
+      userId: normalizeWebhookUserIdForSheet_(row[C.USER_ID]),
       role: bStr,
-      fixedStoreId: row[2] != null ? String(row[2]).trim() : '',
+      fixedStoreId: row[C.FIXED_STORE_ID] != null ? String(row[C.FIXED_STORE_ID]).trim() : '',
       isActive,
-      displayName: row[4] != null ? String(row[4]) : '',
-      registeredAt: row[5]
+      displayName: row[C.DISPLAY_NAME] != null ? String(row[C.DISPLAY_NAME]) : '',
+      registeredAt: row[C.REGISTERED_AT]
     };
   }
 
   return {
-    userId: normalizeWebhookUserIdForSheet_(row[0]),
+    userId: normalizeWebhookUserIdForSheet_(row[C.USER_ID]),
     role: ROLE_STORE,
     fixedStoreId: bStr,
     isActive: true,
     displayName: '',
-    registeredAt: row[2]
+    registeredAt: row[C.FIXED_STORE_ID]
   };
 }
 
@@ -1263,7 +1386,6 @@ function loadPending(userId) {
  * PENDING_EXPIRE_MS を過ぎていても PENDING_LOAD_GRACE_MS 以内なら返す。
  * 返した場合はその行を削除する。
  */
-const PENDING_LOAD_GRACE_MS = 5 * 60 * 1000; // 5分まで猶予
 
 function loadPendingWithGrace(userId) {
   const sheet = getPendingSheet(false);
@@ -1274,7 +1396,7 @@ function loadPendingWithGrace(userId) {
     if (!sheetRowUserIdMatches_(data[i][0], userId)) continue;
     const savedAt = data[i][3] ? new Date(data[i][3]).getTime() : 0;
     const age = now - savedAt;
-    if (age > PENDING_LOAD_GRACE_MS) return null;
+    if (age > LINE_LIMITS.PENDING_LOAD_GRACE_MS) return null;
     const result = {
       storeId: data[i][1],
       message: data[i][2],
@@ -1617,15 +1739,13 @@ function handleAdminTestPost(replyToken, adminUserId) {
     userId: adminUserId,
     role: ROLE_STORE,
     sourceType: SOURCE_FIXED,
-    category: 'お知らせ',
-    text: '🧪 テスト投稿',
+    title: 'テスト投稿',
+    text: 'かわら版テスト',
     imageUrl: '',
     lat: c.lat,
     lng: c.lng,
     storeId: u.fixedStoreId,
-    spotId: '',
     createdAt,
-    expiresAt: getPostExpiresAt_(createdAt),
     isVisible: true
   });
   replyText(replyToken, '✅ posts にテスト行を書き込みしました');
@@ -1661,12 +1781,15 @@ function buildHelpMessage(userId) {
       'マップモデレーション: posts の isVisible を編集できます。';
   } else if (u.role === ROLE_STORE) {
     flow =
-      '📝 店舗投稿の順番: 短文テキスト→📸写真\n座標はスプレッドシート側のお店情報を使用します。\n' +
-      '📍移動中の投稿の順番: 📍位置情報→短文テキスト→📸写真（現在地がマップに出ます）';
+      '📝 かわら版の投稿順番: テキスト→📸写真\n' +
+      'テキストは1行目=タイトル(14字以内)、2行目以降=本文(50字以内)\n' +
+      '座標はスプレッドシート側のお店情報を使用します。\n' +
+      '📍移動中: 📍位置情報→テキスト→📸写真';
   } else {
     flow = MSG_LINE_LEGACY_ROLE_SUSPENDED_;
   }
-  return head + flow + `\n\n文字数:${MAX_MESSAGE_LENGTH}文字まで`;
+  return head + flow +
+    `\n\nタイトル:${MAX_TITLE_LENGTH}字 / 本文:${MAX_MESSAGE_LENGTH}字まで`;
 }
 
 function fetchLineImageToDrive(messageId) {
@@ -1708,10 +1831,7 @@ function ensureMasterSheetIsGvizFirst_(ss) {
 
 function findMasterSheetForGviz_(ss) {
   const reserved = {};
-  [
-    USER_MAP_SHEET_NAME, POSTS_SHEET_NAME,
-    BOT_SESSIONS_SHEET_NAME, PENDING_SHEET_NAME
-  ].forEach(n => { reserved[n] = true; });
+  Object.keys(LINE_SHEETS).forEach(function (k) { reserved[LINE_SHEETS[k]] = true; });
 
   const sheets = ss.getSheets();
   for (let i = 0; i < sheets.length; i++) {
@@ -1838,15 +1958,13 @@ function testAppend() {
     userId: 'TEST',
     role: ROLE_STORE,
     sourceType: SOURCE_FIXED,
-    category: 'お知らせ',
-    text: 'テスト',
+    title: 'テスト',
+    text: 'かわら版テスト本文',
     imageUrl: '',
     lat: 34.675,
     lng: 138.943,
     storeId: 'test',
-    spotId: '',
     createdAt: new Date(),
-    expiresAt: getPostExpiresAt_(new Date()),
     isVisible: true
   });
 }

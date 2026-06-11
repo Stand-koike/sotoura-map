@@ -7,6 +7,7 @@
 
     <!-- エリア設定: secrets → config → config.local（任意）。新エリアは config.js のみ編集 -->
     <script src="secrets.local.js" onerror="window.__SHIMODA_MAP_SECRETS__=window.__SHIMODA_MAP_SECRETS__||{}"></script>
+    <script src="line-contract.js"></script>
     <script src="config.js"></script>
     <script src="config.local.js" onerror="void 0"></script>
     <script>
@@ -416,11 +417,49 @@
         .marker-image { width: 100%; height: 100%; object-fit: cover; position: absolute; top: 0; left: 0; z-index: 2; }
         .marker-emoji { font-size: 28px; z-index: 1; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); }
         .status-badge { position: absolute; bottom: 0; right: 0; width: 14px; height: 14px; border-radius: 50%; border: 2px solid white; z-index: 5; display: none; }
-        .marker-news-badge {
-            position: absolute; top: 0; right: 0; width: 18px; height: 18px;
-            background: var(--color-accent); border-radius: 50%;
+        .marker-post-badge {
+            position: absolute; top: -4px; right: -4px;
+            width: 24px; height: 24px;
+            background: linear-gradient(135deg, #FF7043, #E53935);
+            border-radius: 50%;
             color: white; display: flex; justify-content: center;
-            align-items: center; font-size: 10px; z-index: 6; border: 2px solid white;
+            align-items: center; font-size: 11px; z-index: 8;
+            border: 2.5px solid white;
+            box-shadow: 0 2px 8px rgba(229, 57, 53, 0.55);
+            animation: post-badge-pulse 2s ease-in-out infinite;
+        }
+        @keyframes post-badge-pulse {
+            0%, 100% { transform: scale(1); box-shadow: 0 2px 8px rgba(229, 57, 53, 0.55); }
+            50% { transform: scale(1.08); box-shadow: 0 3px 12px rgba(229, 57, 53, 0.75); }
+        }
+
+        /* クラスタ: 代表写真のまま右上に件数 */
+        .custom-marker--cluster { cursor: pointer; }
+        .marker-cluster-badge {
+            position: absolute; top: -4px; right: -4px;
+            min-width: 24px; height: 24px; padding: 0 6px;
+            background: #fff; color: #1A3A4A;
+            border-radius: 999px;
+            font-size: 12px; font-weight: 700; line-height: 1;
+            display: flex; align-items: center; justify-content: center;
+            border: 2px solid #fff;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.28);
+            z-index: 9; pointer-events: none;
+        }
+        @media (max-width: 767px) {
+            .marker-cluster-badge {
+                min-width: 20px; height: 20px; padding: 0 5px;
+                font-size: 11px; top: -3px; right: -3px;
+            }
+        }
+        /* クラスタ時: 件数（右上）と投稿（左上）を両立 */
+        .custom-marker--cluster .marker-post-badge {
+            top: -4px; left: -4px; right: auto;
+        }
+        @media (max-width: 767px) {
+            .custom-marker--cluster .marker-post-badge {
+                top: -3px; left: -3px;
+            }
         }
 
         /* GPS 現在地 */
@@ -697,13 +736,74 @@
             border-radius: 50%;
             border: 2px solid rgba(255,255,255,0.95);
         }
-        .card-ind--news { color: var(--color-accent); }
-        .card-ind--hours { color: var(--color-primary); }
-        .live-badge--card-top {
-            font-size: 7px; font-weight: bold; letter-spacing: 0.3px;
-            padding: 2px 6px; border-radius: 3px;
-            animation: none;
+        .card-ind--post {
+            min-width: 24px; height: 22px; padding: 0 6px;
+            background: linear-gradient(135deg, #FF7043, #E53935);
+            color: #fff; font-size: 11px;
+            box-shadow: 0 1px 4px rgba(229, 57, 53, 0.45);
         }
+        .btn-kawara {
+            display: inline-flex; align-items: center; gap: 5px;
+            margin-top: 6px; padding: 5px 10px;
+            background: #FFF8E1; color: #5D4037;
+            border: 1px solid #D7CCC8; border-radius: 8px;
+            font-size: 11px; font-weight: bold; cursor: pointer;
+            pointer-events: auto;
+        }
+        .btn-kawara:active { transform: scale(0.97); }
+        .btn-kawara-large {
+            display: none; width: 100%; justify-content: center;
+            margin: 0 0 10px; padding: 12px; border-radius: 12px;
+            font-size: 15px;
+        }
+        .modal-status-badge {
+            display: inline-block;
+            font-size: 12px; font-weight: bold; letter-spacing: 0.4px;
+            padding: 4px 12px; border-radius: 8px;
+            margin: 2px 0 10px;
+        }
+        .kawara-modal-overlay {
+            position: fixed; inset: 0; z-index: 2500;
+            background: rgba(0,0,0,0.55);
+            display: none; justify-content: center; align-items: center;
+            padding: 16px;
+        }
+        .kawara-modal-overlay.open { display: flex; }
+        .kawara-modal-box {
+            width: min(420px, 100%); max-height: 90vh; overflow-y: auto;
+            background: #FFFDF7; border-radius: 16px;
+            box-shadow: 0 12px 40px rgba(0,0,0,0.25);
+            border: 2px solid #D7CCC8;
+        }
+        .kawara-modal-header {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 14px 16px 10px; border-bottom: 1px solid #EFEBE9;
+        }
+        .kawara-title-label {
+            font-size: 13px; font-weight: bold; color: #5D4037;
+            letter-spacing: 0.08em;
+        }
+        .kawara-close {
+            border: none; background: transparent; font-size: 22px;
+            line-height: 1; color: #888; cursor: pointer; padding: 0 4px;
+        }
+        .kawara-modal-body { padding: 14px 16px 18px; }
+        .kawara-modal-store-name {
+            font-size: 12px; color: #888; margin-bottom: 6px;
+        }
+        .kawara-modal-post-title {
+            font-size: 18px; font-weight: bold; color: #3E2723;
+            margin-bottom: 10px; line-height: 1.4;
+        }
+        .kawara-modal-image {
+            width: 100%; border-radius: 10px; margin-bottom: 12px;
+            max-height: 260px; object-fit: cover; display: block; cursor: pointer;
+        }
+        .kawara-modal-text {
+            font-size: 14px; color: #333; line-height: 1.7;
+            white-space: pre-wrap; margin-bottom: 10px;
+        }
+        .kawara-modal-date { font-size: 12px; color: #999; }
         .card-info {
             flex: 0 0 auto;
             min-height: 0;
@@ -1402,6 +1502,9 @@
         <div class="modal-body">
             <span id="modal-cat" style="font-size:12px; color:var(--color-text-sub);"></span>
             <h2 class="modal-title" id="modal-title"></h2>
+            <div id="modal-status-wrap" style="display:none; margin: 4px 0 8px;">
+                <span id="modal-status" class="card-status card-status--compact"></span>
+            </div>
             <div class="modal-hours" id="modal-hours-wrap" style="display:none;">
                 <i class="fas fa-clock"></i>
                 <span id="modal-hours"></span>
@@ -1422,6 +1525,10 @@
             <a id="modal-nav-btn" class="btn-nav-large" target="_blank">
                 <i class="fas fa-location-arrow"></i> <span id="btn-nav-text">Google Mapsで見る</span>
             </a>
+            <button type="button" class="btn-kawara btn-kawara-large" id="modal-kawara-btn"
+                onclick="UIModule.openKawaraFromModal()">
+                <i class="fas fa-newspaper" aria-hidden="true"></i> <span id="modal-kawara-text">かわら版を見る</span>
+            </button>
             <button class="btn-coupon-large" id="modal-coupon-btn" onclick="UIModule.showCoupon()">
                 <i class="fas fa-ticket-alt"></i> <span id="btn-coupon-text">クーポンを使う</span>
             </button>
@@ -1436,6 +1543,23 @@
         <div class="coupon-text" id="coupon-text"></div>
         <p style="font-size:12px; color:#666; margin-bottom:20px;">このスクリーンをご提示ください</p>
         <button class="coupon-close" onclick="UIModule.closeCoupon(null, true)">閉じる</button>
+    </div>
+</div>
+
+<!-- かわら版モーダル -->
+<div class="kawara-modal-overlay" id="kawara-modal-overlay" onclick="UIModule.closeKawaraModal(event)">
+    <div class="kawara-modal-box" onclick="event.stopPropagation()">
+        <div class="kawara-modal-header">
+            <span class="kawara-title-label" id="kawara-label">かわら版</span>
+            <button type="button" class="kawara-close" onclick="UIModule.closeKawaraModal(null, true)" aria-label="閉じる">×</button>
+        </div>
+        <div class="kawara-modal-body">
+            <div class="kawara-modal-store-name" id="kawara-store-name"></div>
+            <div class="kawara-modal-post-title" id="kawara-post-title"></div>
+            <img class="kawara-modal-image" id="kawara-image" src="" alt="" style="display:none">
+            <div class="kawara-modal-text" id="kawara-text"></div>
+            <div class="kawara-modal-date" id="kawara-date"></div>
+        </div>
     </div>
 </div>
 
@@ -1476,6 +1600,11 @@ const CONFIG = (typeof window !== 'undefined' && window.__SHIMODA_MAP_CONFIG__)
                 cacheVersion: 'fallback'
             },
             POLL_INTERVAL: 30000,
+            ENABLE_STANDALONE_LIVE_PINS: false,
+            CLUSTER: {
+                enabled: true, clusterMaxZoom: 17, clusterRadius: 65,
+                clusterMinPoints: 2, flyToZoom: 17.5
+            },
             POSTS_SHEET: 'posts',
             LIVE_POST_POLL_INTERVAL: 30000,
             TRANSLATIONS: { ja: {}, en: {} }
@@ -1488,6 +1617,7 @@ const CONFIG = (typeof window !== 'undefined' && window.__SHIMODA_MAP_CONFIG__)
 const State = {
     language:            'ja',
     allSpots:            [],
+    filteredSpots:       [],
     activeMarkers:       [],
     userLocationMarker:  null,
     currentSpot:         null,
@@ -1644,6 +1774,38 @@ function normalizeStoreId_(raw) {
     return String(raw).replace(/\s+/g, ' ').trim();
 }
 
+/** posts シート: createdAt 列が空・✔・TRUE のときも受け付ける */
+function parsePostCreatedAt_(raw) {
+    if (raw == null || raw === '') return new Date();
+    const s = String(raw).trim();
+    if (s === '✔' || s === '☑' || s.toUpperCase() === 'TRUE') return new Date();
+    const d = parseSheetDate(raw);
+    return d || new Date();
+}
+
+/** posts 列定義（line-contract.js → CONFIG.LINE.POSTS_COL） */
+const POSTS_COL = (CONFIG.LINE && CONFIG.LINE.POSTS_COL) || {
+    POST_ID: 0, USER_ID: 1, ROLE: 2, SOURCE_TYPE: 3, TITLE: 4, TEXT: 5,
+    IMAGE_URL: 6, LAT: 7, LNG: 8, STORE_ID: 9, CREATED_AT: 10, IS_VISIBLE: 11
+};
+
+const LINE_SOURCE = (CONFIG.LINE && CONFIG.LINE.SOURCE_TYPES) || {
+    FIXED: 'fixed', GPS: 'gps', SELECTED: 'selected'
+};
+
+/** posts シート: isVisible（FALSE のみ非表示。✔ / TRUE は表示） */
+function isPostVisible_(row) {
+    const isHidden = (v) => v === false || String(v).trim().toUpperCase() === 'FALSE';
+    if (isHidden(row.c[POSTS_COL.IS_VISIBLE]?.v)) return false;
+    return true;
+}
+
+function getSpotStatusText(spot) {
+    const ja = spot.status != null ? String(spot.status).trim() : '';
+    const en = spot.status_en != null ? String(spot.status_en).trim() : '';
+    return State.language === 'ja' ? (ja || en) : (en || ja);
+}
+
 function roundCoord5(v) {
     return Math.round(Number(v) * 1e5) / 1e5;
 }
@@ -1760,7 +1922,7 @@ const DataModule = {
             const latN = Number(lat);
             const lngN = Number(lng);
             if (!Number.isFinite(latN) || !Number.isFinite(lngN)) return acc;
-            // HIDDEN 列が false/"FALSE" なら非表示
+            // hidden 列が false/"FALSE" なら非表示
             if (row.c[COLS.HIDDEN]?.v === false || row.c[COLS.HIDDEN]?.v === 'FALSE') return acc;
 
             let url = row.c[COLS.URL]?.v || '';
@@ -1786,9 +1948,8 @@ const DataModule = {
             const phone     = row.c[COLS.PHONE]?.v     != null ? String(row.c[COLS.PHONE].v)     : '';
             const phoneEn   = row.c[COLS.PHONE_EN]?.v   != null ? String(row.c[COLS.PHONE_EN].v)   : '';
 
-            // タグ: "#ペット可, #雨の日OK" → ['ペット可', '雨の日OK']
             const _parseTags = (raw) => raw
-                ? String(raw).split(/[,、#\s]+/).map(t => t.replace(/^#/, '').trim()).filter(Boolean)
+                ? String(raw).split(/[,、]+/).map(t => t.replace(/^#\s*/, '').trim()).filter(Boolean)
                 : [];
             const tags    = _parseTags(row.c[COLS.TAGS]?.v);
             const tagsEn  = _parseTags(row.c[COLS.TAGS_EN]?.v).length
@@ -1890,17 +2051,34 @@ const PostsModule = {
         PostsModule._attachLiveToSpots();
 
         App._refreshUI();
+
+        if (State.currentSpot && document.getElementById('modal-overlay')?.classList.contains('open')) {
+            UIModule.openModal(State.currentSpot.id);
+        }
     },
 
     _attachLiveToSpots() {
+        const COORD_EPS = 0.00005; // 約5m — store_id 不一致時の座標フォールバック
+        const fixedPosts = Object.values(State.postsByStoreId);
+
         State.allSpots.forEach(spot => {
             const sid = (spot.storeId || '').trim();
-            spot.livePost = sid ? (State.postsByStoreId[sid] || null) : null;
+            if (sid && State.postsByStoreId[sid]) {
+                spot.livePost = State.postsByStoreId[sid];
+                return;
+            }
+            const [lng, lat] = spot.coords;
+            spot.livePost = fixedPosts.find(p =>
+                p.sourceType === LINE_SOURCE.FIXED &&
+                p.lat != null && p.lng != null &&
+                Math.abs(Number(p.lat) - lat) < COORD_EPS &&
+                Math.abs(Number(p.lng) - lng) < COORD_EPS
+            ) || null;
         });
     },
 
     /**
-     * 列: postId userId role sourceType category text imageUrl lat lng storeId spotId createdAt expiresAt isVisible
+     * 列: postId userId role sourceType title text imageUrl lat lng storeId createdAt isVisible
      */
     _parse(json) {
         const postsByStoreId = {};
@@ -1912,49 +2090,43 @@ const PostsModule = {
 
         json.table.rows.forEach(row => {
             if (!row?.c) return;
+            if (!isPostVisible_(row)) return;
 
-            const isVisibleRaw = row.c[13]?.v;
-            if (isVisibleRaw === false || String(isVisibleRaw).toUpperCase() === 'FALSE') return;
-
-            const text = row.c[5]?.v != null ? String(row.c[5].v).trim() : '';
-            const rawImg = row.c[6]?.v != null ? String(row.c[6].v).trim() : '';
+            const title = row.c[POSTS_COL.TITLE]?.v != null ? String(row.c[POSTS_COL.TITLE].v).trim() : '';
+            const text = row.c[POSTS_COL.TEXT]?.v != null ? String(row.c[POSTS_COL.TEXT].v).trim() : '';
+            const rawImg = row.c[POSTS_COL.IMAGE_URL]?.v != null ? String(row.c[POSTS_COL.IMAGE_URL].v).trim() : '';
             const imageUrl = rawImg ? normalizeImageUrl(rawImg) : '';
-            if (!text && !imageUrl) return;
+            if (!title && !text && !imageUrl) return;
 
-            const role = row.c[2]?.v != null ? String(row.c[2].v).trim().toLowerCase() : '';
-            const sourceType = row.c[3]?.v != null ? String(row.c[3].v).trim().toLowerCase() : '';
-            const category = row.c[4]?.v != null ? String(row.c[4].v).trim() : '';
+            const role = row.c[POSTS_COL.ROLE]?.v != null ? String(row.c[POSTS_COL.ROLE].v).trim().toLowerCase() : '';
+            const sourceType = row.c[POSTS_COL.SOURCE_TYPE]?.v != null
+                ? String(row.c[POSTS_COL.SOURCE_TYPE].v).trim().toLowerCase() : '';
 
-            let lat = row.c[7]?.v;
-            let lng = row.c[8]?.v;
+            let lat = row.c[POSTS_COL.LAT]?.v;
+            let lng = row.c[POSTS_COL.LNG]?.v;
             lat = lat != null && lat !== '' ? Number(lat) : null;
             lng = lng != null && lng !== '' ? Number(lng) : null;
 
-            const createdAt = parseSheetDate(row.c[11]?.v);
-            if (!createdAt) return;
+            const createdAt = parsePostCreatedAt_(row.c[POSTS_COL.CREATED_AT]?.v);
 
-            const storeId = normalizeStoreId_(row.c[9]?.v);
-            const spotIdCol = row.c[10]?.v != null ? String(row.c[10].v).trim() : '';
-            const expiresAt = parseSheetDate(row.c[12]?.v);
+            const storeId = normalizeStoreId_(row.c[POSTS_COL.STORE_ID]?.v);
 
             const post = {
-                postId:     row.c[0]?.v != null ? String(row.c[0].v) : '',
-                userId:     row.c[1]?.v != null ? String(row.c[1].v) : '',
+                postId:     row.c[POSTS_COL.POST_ID]?.v != null ? String(row.c[POSTS_COL.POST_ID].v) : '',
+                userId:     row.c[POSTS_COL.USER_ID]?.v != null ? String(row.c[POSTS_COL.USER_ID].v) : '',
                 role,
                 sourceType,
-                category,
+                title,
                 message: text,
                 imageUrl,
                 lat,
                 lng,
                 storeId,
-                spotId:     spotIdCol,
-                timestamp:  createdAt,
-                expiresAt
+                timestamp:  createdAt
             };
 
             let dedupKey;
-            if (sourceType === 'fixed' && storeId) {
+            if (sourceType === LINE_SOURCE.FIXED && storeId) {
                 dedupKey = `f_${storeId}`;
             } else if (lat != null && lng != null && !isNaN(lat) && !isNaN(lng)) {
                 dedupKey = `m_${roundCoord5(lat)}_${roundCoord5(lng)}`;
@@ -1966,25 +2138,24 @@ const PostsModule = {
         });
 
         Object.values(buckets).forEach(p => {
-            if (p.sourceType === 'fixed' && p.storeId) {
+            if (p.sourceType === LINE_SOURCE.FIXED && p.storeId) {
                 const sid = p.storeId;
                 const cur = postsByStoreId[sid];
                 if (!cur || p.timestamp.getTime() > cur.timestamp.getTime()) {
                     postsByStoreId[sid] = {
                         timestamp:  p.timestamp,
+                        title:      p.title,
                         message:    p.message,
                         imageUrl:   p.imageUrl,
-                        category:   p.category,
                         role:       p.role,
                         sourceType: p.sourceType,
-                        expiresAt:  p.expiresAt,
                         lat:        p.lat,
                         lng:        p.lng
                     };
                 }
                 return;
             }
-            if (p.sourceType === 'gps' || p.sourceType === 'selected') {
+            if (p.sourceType === LINE_SOURCE.GPS || p.sourceType === LINE_SOURCE.SELECTED) {
                 mobileList.push(p);
             }
         });
@@ -2024,38 +2195,11 @@ const LayerManager = {
             visible: true,
             type:    'markers'
         },
-        routes: {
-            name:    'モデルルート',
-            name_en: 'Routes',
-            icon:    '🚶',
-            color:   '#FF5722',
-            visible: false,
-            type:    'geojson-line',
-            // 将来: Google Sheets や外部 GeoJSON URL からデータを注入
-            data: { type: 'FeatureCollection', features: [] }
-        },
-        areas: {
-            name:    'エリア',
-            name_en: 'Areas',
-            icon:    '🗺️',
-            color:   '#4CAF50',
-            visible: false,
-            type:    'geojson-fill',
-            data: { type: 'FeatureCollection', features: [] }
-        },
     },
 
     // マップロード後に初期化
     init(map) {
         this._map = map;
-        this._registerGeoJSON('routes', {
-            type:  'line',
-            paint: { 'line-color': '#FF5722', 'line-width': 4, 'line-dasharray': [2, 1] }
-        });
-        this._registerGeoJSON('areas', {
-            type:  'fill',
-            paint: { 'fill-color': '#4CAF50', 'fill-opacity': 0.25 }
-        });
     },
 
     _registerGeoJSON(id, layerOpt) {
@@ -2081,9 +2225,12 @@ const LayerManager = {
             State.activeMarkers.forEach(m => {
                 m.getElement().style.display = def.visible ? '' : 'none';
             });
-            State.liveMarkers.forEach(m => {
-                m.getElement().style.display = def.visible ? '' : 'none';
-            });
+            if (CONFIG.ENABLE_STANDALONE_LIVE_PINS) {
+                State.liveMarkers.forEach(m => {
+                    m.getElement().style.display = def.visible ? '' : 'none';
+                });
+            }
+            if (def.visible) UIModule.syncMarkerDisplay();
         } else {
             const layerId = `${id}-layer`;
             if (this._map?.getLayer(layerId)) {
@@ -2110,6 +2257,143 @@ const LayerManager = {
     },
 
     getDefs() { return this._defs; }
+};
+
+// ================================================================
+// ClusterModule — 画面ピクセル距離でクラスタ → HTML 代表写真＋件数バッジ
+// （Mapbox querySourceFeatures はレイヤー無し GeoJSON で空になるため自前集計）
+// ================================================================
+const ClusterModule = {
+    _map:       null,
+    _mapBound:  false,
+
+    _cfg() {
+        return CONFIG.CLUSTER || {};
+    },
+
+    isEnabled() {
+        return this._cfg().enabled !== false;
+    },
+
+    maxZoom() {
+        const z = Number(this._cfg().clusterMaxZoom);
+        return Number.isFinite(z) ? z : 17;
+    },
+
+    radiusPx() {
+        const r = Number(this._cfg().clusterRadius);
+        return Number.isFinite(r) && r > 0 ? r : 65;
+    },
+
+    minPoints() {
+        const n = Number(this._cfg().clusterMinPoints);
+        return Number.isFinite(n) && n >= 2 ? n : 2;
+    },
+
+    usesClusterView() {
+        if (!this.isEnabled() || !this._map) return false;
+        return this._map.getZoom() <= this.maxZoom();
+    },
+
+    init(map) {
+        if (!this.isEnabled() || !map) return;
+        this._map = map;
+        if (this._mapBound) return;
+        this._mapBound = true;
+        const refresh = () => UIModule.syncMarkerDisplay();
+        map.on('zoomend', refresh);
+        map.on('moveend', refresh);
+    },
+
+    /** クラスタ内の代表スポット（画像ありを優先） */
+    _pickRepresentative(members) {
+        let fallback = null;
+        for (let i = 0; i < members.length; i++) {
+            const spot = members[i];
+            if (spot?.imageUrl) return spot;
+            if (!fallback && spot) fallback = spot;
+        }
+        return fallback || members[0] || null;
+    },
+
+    /**
+     * 現在のズーム・画面投影で spots をクラスタ／単独に分割
+     * @returns {{ clusters: {members, count, coords, rep}[], singles: object[] }}
+     */
+    computeGroups(spots) {
+        const map = this._map;
+        const list = spots || [];
+        if (!map || !list.length) return { clusters: [], singles: list };
+
+        const radius = this.radiusPx();
+        const minPts = this.minPoints();
+        const r2 = radius * radius;
+        const n = list.length;
+        const used = new Uint8Array(n);
+        const clusters = [];
+
+        for (let i = 0; i < n; i++) {
+            if (used[i]) continue;
+            const pi = map.project(list[i].coords);
+            const group = [i];
+
+            for (let j = i + 1; j < n; j++) {
+                if (used[j]) continue;
+                const pj = map.project(list[j].coords);
+                const dx = pi.x - pj.x;
+                const dy = pi.y - pj.y;
+                if (dx * dx + dy * dy <= r2) group.push(j);
+            }
+
+            if (group.length < minPts) continue;
+
+            group.forEach(idx => { used[idx] = 1; });
+            const members = group.map(idx => list[idx]);
+            let sx = 0;
+            let sy = 0;
+            members.forEach(s => {
+                sx += s.coords[0];
+                sy += s.coords[1];
+            });
+            clusters.push({
+                members,
+                count:       members.length,
+                coords:      [sx / members.length, sy / members.length],
+                rep:         this._pickRepresentative(members),
+                hasLivePost: members.some(s => s.livePost)
+            });
+        }
+
+        const singles = [];
+        for (let i = 0; i < n; i++) {
+            if (!used[i]) singles.push(list[i]);
+        }
+        return { clusters, singles };
+    },
+
+    expandCluster(coords) {
+        const map = this._map;
+        if (!map) return;
+        const target = Math.min(
+            Math.max(map.getZoom() + 2, this.maxZoom() + 0.5),
+            map.getMaxZoom()
+        );
+        map.easeTo({ center: coords, zoom: target });
+    },
+
+    /** ズーム ≤ clusterMaxZoom 時: 代表写真＋件数の HTML マーカーを描画 */
+    renderHtmlMarkers(spots, spotsVisible) {
+        if (!this.isEnabled() || !this._map || !spotsVisible) return;
+
+        const { clusters, singles } = this.computeGroups(spots);
+
+        singles.forEach(spot => UIModule._appendSpotHtmlMarker(spot, true));
+
+        clusters.forEach(c => {
+            if (!c.rep) return;
+            UIModule._appendClusterHtmlMarker(c.rep, c.count, c.coords, c.hasLivePost);
+        });
+    }
 };
 
 /** JST の暦・年月日（数値） */
@@ -2272,6 +2556,7 @@ const MapModule = {
 
             try {
                 LayerManager.init(this._map);
+                ClusterModule.init(this._map);
             } catch (e) {
                 console.error('[MapModule] レイヤー初期化エラー:', e);
             }
@@ -2536,12 +2821,16 @@ const MapModule = {
         const padding = State.isPC
             ? { top: 50, bottom: 50, left: 50, right: 50 }
             : { top: 50, bottom: 240, left: 20, right: 20 };
-        this._map.flyTo({ center: spot.coords, zoom: 17, speed: 0.8, padding, essential: true });
+        const flyZoom = Number(CONFIG.CLUSTER?.flyToZoom);
+        const zoom = Number.isFinite(flyZoom) ? flyZoom : 17.5;
+        this._map.flyTo({ center: spot.coords, zoom, speed: 0.8, padding, essential: true });
     },
 
     flyToUser() {
         if (State.userLocationMarker) {
-            this._map.flyTo({ center: State.userLocationMarker.getLngLat(), zoom: 17 });
+            const flyZoom = Number(CONFIG.CLUSTER?.flyToZoom);
+            const zoom = Number.isFinite(flyZoom) ? flyZoom : 17.5;
+            this._map.flyTo({ center: State.userLocationMarker.getLngLat(), zoom });
         }
     },
 
@@ -2744,83 +3033,151 @@ const UIModule = {
     // ---- マーカー ----
 
     updateMarkers(spots) {
+        State.filteredSpots = spots || [];
+        this.syncMarkerDisplay();
+    },
+
+    /** ズームに応じてクラスタ（代表写真＋件数）／個別 HTML マーカーを切替 */
+    syncMarkerDisplay() {
+        const spots = State.filteredSpots || [];
+        const spotsVisible = LayerManager.getDefs().spots.visible;
+        const clusterView = ClusterModule.isEnabled() && ClusterModule.usesClusterView();
+
+        if (!spotsVisible) {
+            State.activeMarkers.forEach(m => { m.getElement().style.display = 'none'; });
+            State.liveMarkers.forEach(m => { m.getElement().style.display = 'none'; });
+            return;
+        }
+
         State.activeMarkers.forEach(m => m.remove());
         State.liveMarkers.forEach(m => m.remove());
         State.activeMarkers = [];
         State.liveMarkers = [];
 
-        const spotsVisible = LayerManager.getDefs().spots.visible;
-
-        spots.forEach(spot => {
-            const si = getStatusInfo(val(spot, 'status'));
-            const el = document.createElement('div');
-            el.className = 'custom-marker';
-            el.id = `marker-${spot.id}`;
-            if (!spotsVisible) el.style.display = 'none';
-
-            const inner = document.createElement('div');
-            inner.className = 'marker-inner floating';
-            inner.style.borderColor = si.color;
-
-            const clip = document.createElement('div');
-            clip.className = 'marker-clip';
-
-            const emoji = document.createElement('span');
-            emoji.className = 'marker-emoji';
-            emoji.innerText = spot.emoji;
-            clip.appendChild(emoji);
-
-            if (spot.imageUrl) {
-                const img = new Image();
-                img.src = spot.imageUrl;
-                img.className = 'marker-image';
-                img.style.display = 'none';
-                img.onload = () => { img.style.display = 'block'; emoji.style.display = 'none'; };
-                clip.appendChild(img);
+        if (clusterView) {
+            ClusterModule.renderHtmlMarkers(spots, spotsVisible);
+            if (State.activeMarkers.length === 0 && spots.length > 0) {
+                console.warn('[UIModule] クラスタ描画が空のため個別ピンにフォールバック');
+                spots.forEach(spot => this._appendSpotHtmlMarker(spot, spotsVisible));
             }
-            inner.appendChild(clip);
+            return;
+        }
 
-            if (val(spot, 'status')) {
-                const badge = document.createElement('div');
-                badge.className = 'status-badge';
-                badge.style.cssText = `background:${si.color}; display:block;`;
-                inner.appendChild(badge);
-            }
-            if (spot.livePost) {
-                inner.style.borderColor = LIVE_RING_COLOR_STORE;
-                inner.style.boxShadow = '0 4px 10px rgba(33,150,243,0.4)';
-                inner.classList.remove('floating');
-                const pin = document.createElement('div');
-                pin.className = 'marker-pin marker-pin--floating';
-                const stem = document.createElement('div');
-                stem.className = 'marker-pin-stem';
-                stem.style.setProperty('--stem-color', LIVE_RING_COLOR_STORE);
-                pin.appendChild(inner);
-                pin.appendChild(stem);
-                const liveBadge = document.createElement('div');
-                liveBadge.className = 'marker-live-badge';
-                liveBadge.textContent = 'LIVE';
-                el.classList.add('custom-marker--live-pin');
-                el.appendChild(liveBadge);
-                el.appendChild(pin);
-            } else {
-                inner.classList.add('floating');
-                if (val(spot, 'news')) {
-                    const nb = document.createElement('div');
-                    nb.className = 'marker-news-badge';
-                    nb.innerHTML = '<i class="fas fa-bullhorn"></i>';
-                    el.appendChild(nb);
-                }
-                el.appendChild(inner);
-            }
-            el.addEventListener('click', e => { e.stopPropagation(); App.selectSpot(spot); });
+        spots.forEach(spot => this._appendSpotHtmlMarker(spot, spotsVisible));
 
-            const marker = new mapboxgl.Marker({ element: el, anchor: 'bottom' })
-                .setLngLat(spot.coords).addTo(MapModule._map);
-            State.activeMarkers.push(marker);
+        if (CONFIG.ENABLE_STANDALONE_LIVE_PINS) {
+            this._appendStandaloneLiveMarkers(spotsVisible);
+        }
+
+        if (State.currentSpot) {
+            document.getElementById(`marker-${State.currentSpot.id}`)?.classList.add('active');
+        }
+    },
+
+    /** クラスタ用 HTML マーカー（代表写真＋右上件数） */
+    _appendClusterHtmlMarker(repSpot, count, coords, hasLivePost) {
+        const si = getStatusInfo(val(repSpot, 'status'));
+        const el = document.createElement('div');
+        el.className = 'custom-marker custom-marker--cluster';
+        el.setAttribute('role', 'button');
+        el.setAttribute('aria-label', `${count}件のスポット`);
+
+        const inner = document.createElement('div');
+        inner.className = 'marker-inner floating';
+        inner.style.borderColor = si.color;
+
+        const clip = document.createElement('div');
+        clip.className = 'marker-clip';
+
+        const emoji = document.createElement('span');
+        emoji.className = 'marker-emoji';
+        emoji.innerText = repSpot.emoji;
+        clip.appendChild(emoji);
+
+        if (repSpot.imageUrl) {
+            const img = new Image();
+            img.src = repSpot.imageUrl;
+            img.className = 'marker-image';
+            img.alt = '';
+            img.style.display = 'none';
+            img.onload = () => { img.style.display = 'block'; emoji.style.display = 'none'; };
+            clip.appendChild(img);
+        }
+        inner.appendChild(clip);
+        el.appendChild(inner);
+
+        if (hasLivePost) {
+            const postBadge = document.createElement('div');
+            postBadge.className = 'marker-post-badge';
+            postBadge.innerHTML = '<i class="fas fa-newspaper" aria-hidden="true"></i>';
+            postBadge.setAttribute('aria-label', '投稿あり');
+            el.appendChild(postBadge);
+        }
+
+        const badge = document.createElement('div');
+        badge.className = 'marker-cluster-badge';
+        badge.textContent = String(count);
+        el.appendChild(badge);
+
+        el.addEventListener('click', e => {
+            e.stopPropagation();
+            ClusterModule.expandCluster(coords);
         });
 
-        /* 運営スポット / GPS の独立ピン */
+        const marker = new mapboxgl.Marker({ element: el, anchor: 'bottom' })
+            .setLngLat(coords).addTo(MapModule._map);
+        State.activeMarkers.push(marker);
+    },
+
+    _appendSpotHtmlMarker(spot, spotsVisible) {
+        const si = getStatusInfo(val(spot, 'status'));
+        const el = document.createElement('div');
+        el.className = 'custom-marker';
+        el.id = `marker-${spot.id}`;
+        if (!spotsVisible) el.style.display = 'none';
+
+        const inner = document.createElement('div');
+        inner.className = 'marker-inner floating';
+        inner.style.borderColor = si.color;
+
+        const clip = document.createElement('div');
+        clip.className = 'marker-clip';
+
+        const emoji = document.createElement('span');
+        emoji.className = 'marker-emoji';
+        emoji.innerText = spot.emoji;
+        clip.appendChild(emoji);
+
+        if (spot.imageUrl) {
+            const img = new Image();
+            img.src = spot.imageUrl;
+            img.className = 'marker-image';
+            img.style.display = 'none';
+            img.onload = () => { img.style.display = 'block'; emoji.style.display = 'none'; };
+            clip.appendChild(img);
+        }
+        inner.appendChild(clip);
+
+        inner.classList.add('floating');
+        el.appendChild(inner);
+
+        if (spot.livePost) {
+            const postBadge = document.createElement('div');
+            postBadge.className = 'marker-post-badge';
+            postBadge.innerHTML = '<i class="fas fa-newspaper" aria-hidden="true"></i>';
+            postBadge.setAttribute('aria-label', '投稿あり');
+            el.appendChild(postBadge);
+        }
+
+        el.addEventListener('click', e => { e.stopPropagation(); App.selectSpot(spot); });
+
+        const marker = new mapboxgl.Marker({ element: el, anchor: 'bottom' })
+            .setLngLat(spot.coords).addTo(MapModule._map);
+        State.activeMarkers.push(marker);
+    },
+
+    /** 将来: 観光客 GPS 投稿などの独立ピン（CONFIG.ENABLE_STANDALONE_LIVE_PINS） */
+    _appendStandaloneLiveMarkers(spotsVisible) {
         (State.liveStandalonePosts || []).forEach(lp => {
             if (!spotsVisible || lp.lat == null || lp.lng == null) return;
             if (!App._standaloneLiveVisible(lp)) return;
@@ -2857,19 +3214,21 @@ const UIModule = {
             pin.appendChild(stem);
 
             const badge = document.createElement('div');
-            badge.className = 'marker-live-badge';
+            badge.className = 'marker-post-badge';
             badge.style.background = clr;
-            badge.textContent = 'LIVE';
+            badge.innerHTML = '<i class="fas fa-newspaper" aria-hidden="true"></i>';
+            badge.setAttribute('aria-label', '投稿あり');
 
             el.appendChild(badge);
             el.appendChild(pin);
 
+            const titleShort = lp.title ? escapeHtml(lp.title) : '';
             const msgShort = lp.message ? escapeHtml(lp.message.substring(0, 80)) : '';
             const imgHtml = lp.imageUrl
                 ? `<img src="${escapeHtml(lp.imageUrl)}" alt="" style="max-width:220px;border-radius:8px;margin-top:6px"/>`
                 : '';
             const popupHtml = `<div style="max-width:240px;font-size:13px;line-height:1.4">
-                <div style="font-weight:bold;color:${clr}">${escapeHtml(lp.category || '')} · ${liveRoleJa(lp.role)}</div>
+                ${titleShort ? `<div style="font-weight:bold;color:${clr}">${titleShort}</div>` : ''}
                 <div style="font-size:11px;color:#888;margin-top:2px">${timeAgo(lp.timestamp)}</div>
                 ${msgShort ? `<div style="margin-top:6px">${msgShort}</div>` : ''}
                 ${imgHtml}
@@ -2882,7 +3241,6 @@ const UIModule = {
 
             State.liveMarkers.push(marker);
         });
-
     },
 
     // ---- カードパネル ----
@@ -2900,9 +3258,7 @@ const UIModule = {
             card.id = `card-${spot.id}`;
             card.onclick = () => App.selectSpot(spot);
 
-            const si = getStatusInfo(val(spot, 'status'));
             const newsVal = val(spot, 'news');
-            const hoursText = val(spot, 'hours');
 
             const thumbHtml = spot.imageUrl
                 ? `<img src="${spot.imageUrl}" class="card-thumb"
@@ -2911,36 +3267,28 @@ const UIModule = {
             const placeholder = `<div class="card-emoji-placeholder"
                 style="${spot.imageUrl ? 'display:none' : ''}">${spot.emoji}</div>`;
 
-            const statusVal = val(spot, 'status');
             const indParts = [];
-            if (statusVal) {
-                indParts.push(`<span class="card-ind card-ind--status" style="background:${si.bg};box-shadow:0 0 0 2px rgba(255,255,255,0.95)" title="${escapeHtml(statusVal)}" role="img" aria-label="${escapeHtml(statusVal)}"></span>`);
-            }
-            if (newsVal) {
-                indParts.push(`<span class="card-ind card-ind--news" title="${escapeHtml(newsVal)}" aria-label="お知らせ"><i class="fas fa-bullhorn" aria-hidden="true"></i></span>`);
-            }
-            if (hoursText) {
-                indParts.push(`<span class="card-ind card-ind--hours" title="${escapeHtml(hoursText)}" aria-label="営業時間"><i class="fas fa-clock" aria-hidden="true"></i></span>`);
-            }
             if (spot.livePost) {
-                indParts.push(`<span class="card-ind card-ind--live-tag" title="LIVE投稿"><span class="live-badge live-badge--card-top">LIVE</span></span>`);
+                indParts.push(`<span class="card-ind card-ind--post" title="投稿あり" aria-label="投稿あり"><i class="fas fa-newspaper" aria-hidden="true"></i></span>`);
             }
             const indicatorsHtml = indParts.length
                 ? `<div class="card-image-indicators">${indParts.join('')}</div>`
                 : '';
 
             const detailLines = [];
-            if (statusVal) {
-                detailLines.push(`<div class="card-detail-line"><span class="card-status--compact" style="background:${si.bg};color:${si.text}">${escapeHtml(statusVal)}</span></div>`);
-            }
             if (newsVal) {
                 detailLines.push(`<div class="card-detail-line card-detail-news-text"><i class="fas fa-bullhorn"></i> ${newsVal}</div>`);
             }
-            if (hoursText) {
-                detailLines.push(`<div class="card-detail-line card-detail-hours"><i class="fas fa-clock"></i> ${hoursText}</div>`);
-            }
             const detailHtml = detailLines.length
                 ? `<div class="card-detail-block">${detailLines.join('')}</div>`
+                : '';
+
+            const statusText = getSpotStatusText(spot);
+            const statusHtml = statusText
+                ? (() => {
+                    const si = getStatusInfo(statusText);
+                    return `<span class="card-status card-status--compact" style="background:${si.bg};color:${si.text}">${escapeHtml(statusText)}</span>`;
+                  })()
                 : '';
 
             const spotTags = (State.language === 'ja' ? spot.tags : spot.tags_en) || [];
@@ -2951,21 +3299,11 @@ const UIModule = {
                   ).join('')}</div>`
                 : '';
 
-            let livePostHtml = '';
+            let kawaraBtnHtml = '';
             if (spot.livePost) {
-                const lp = spot.livePost;
-                const timeStr = timeAgo(lp.timestamp);
-                const safeMsg = lp.message
-                    ? lp.message.substring(0, 52).replace(/</g, '&lt;').replace(/>/g, '&gt;')
-                    : (lp.imageUrl ? '📸 画像あり（詳細で表示）' : '');
-                const cat = lp.category ? escapeHtml(lp.category) : '';
-                livePostHtml = `<div class="card-live-post card-live-post--compact">
-                    <div class="card-live-compact-meta">
-                        ${cat ? `<span class="card-live-cat">${cat}</span>` : ''}
-                        <span class="card-live-time">${timeStr}</span>
-                    </div>
-                    ${safeMsg ? `<div class="card-live-message">${safeMsg}</div>` : ''}
-                </div>`;
+                kawaraBtnHtml = `<button type="button" class="btn-kawara" onclick="event.stopPropagation(); UIModule.openKawaraModal('${spot.id}')">
+                    <i class="fas fa-newspaper" aria-hidden="true"></i> ${t('kawaraView')}
+                </button>`;
             }
 
             card.innerHTML = `
@@ -2973,9 +3311,10 @@ const UIModule = {
                 <div class="card-info">
                     <div class="card-info-main">
                         <div class="card-title">${val(spot, 'name')}</div>
+                        ${statusHtml}
                         ${detailHtml}
                         ${tagsHtml}
-                        ${livePostHtml}
+                        ${kawaraBtnHtml}
                     </div>
                     <div class="card-arrow" role="button" aria-label="詳細">
                         <i class="fas fa-arrow-right"></i>
@@ -3237,6 +3576,20 @@ const UIModule = {
         document.getElementById('modal-cat').innerText   = val(spot, 'category');
         document.getElementById('modal-title').innerText = val(spot, 'name');
 
+        // ステータス
+        const statusText = getSpotStatusText(spot);
+        const statusWrap = document.getElementById('modal-status-wrap');
+        const statusEl = document.getElementById('modal-status');
+        if (statusText && statusWrap && statusEl) {
+            const si = getStatusInfo(statusText);
+            statusWrap.style.display = 'block';
+            statusEl.textContent = statusText;
+            statusEl.style.background = si.bg;
+            statusEl.style.color = si.text;
+        } else if (statusWrap) {
+            statusWrap.style.display = 'none';
+        }
+
         // 営業時間
         const hoursText = val(spot, 'hours');
         const hoursWrap = document.getElementById('modal-hours-wrap');
@@ -3290,34 +3643,17 @@ const UIModule = {
         } else {
             phoneWrap.style.display = 'none';
         }
-        // ライブ投稿セクション
+        // かわら版は専用モーダルで表示（詳細モーダルには出さない）
         const livePostEl = document.getElementById('modal-live-post');
-        if (spot.livePost) {
-            const lp = spot.livePost;
-            const timeStr = timeAgo(lp.timestamp);
-            const safeUrl = lp.imageUrl ? lp.imageUrl.replace(/'/g, '%27') : '';
-            const imgHtml = lp.imageUrl
-                ? `<img src="${lp.imageUrl}" class="modal-live-image"
-                    onclick="UIModule.openLightbox('${safeUrl}')"
-                    onerror="this.style.display='none'">`
-                : '';
-            const safeMsg = lp.message
-                ? lp.message.replace(/</g, '&lt;').replace(/>/g, '&gt;')
-                : '';
-            const cat = lp.category ? escapeHtml(lp.category) : '';
-            const roleLine = lp.role ? ` · ${escapeHtml(liveRoleJa(lp.role))}` : '';
-            livePostEl.innerHTML = `
-                <div class="modal-live-post-header">
-                    <span class="live-badge">● LIVE</span>
-                    <span class="modal-live-time">${timeStr}</span>
-                </div>
-                ${cat ? `<div style="font-size:13px;font-weight:bold;color:#1565C0;margin-bottom:6px">${cat}${roleLine}</div>` : ''}
-                ${imgHtml}
-                ${safeMsg ? `<div class="modal-live-message">${safeMsg}</div>` : ''}`;
-            livePostEl.style.display = 'block';
-        } else {
-            livePostEl.style.display = 'none';
-            livePostEl.innerHTML = '';
+        livePostEl.style.display = 'none';
+        livePostEl.innerHTML = '';
+
+        const kawaraBtn = document.getElementById('modal-kawara-btn');
+        if (spot.livePost && kawaraBtn) {
+            kawaraBtn.style.display = 'inline-flex';
+            document.getElementById('modal-kawara-text').textContent = t('kawaraView');
+        } else if (kawaraBtn) {
+            kawaraBtn.style.display = 'none';
         }
 
         document.getElementById('modal-text').innerText  = val(spot, 'detail') || val(spot, 'desc') || '';
@@ -3335,6 +3671,47 @@ const UIModule = {
     closeModal(e, force) {
         if (force || e?.target?.id === 'modal-overlay')
             document.getElementById('modal-overlay').classList.remove('open');
+    },
+
+    // ---- かわら版モーダル ----
+
+    openKawaraFromModal() {
+        if (State.currentSpot && State.currentSpot.id) {
+            this.openKawaraModal(State.currentSpot.id);
+        }
+    },
+
+    openKawaraModal(spotId) {
+        const spot = State.allSpots.find(s => s.id === spotId);
+        if (!spot || !spot.livePost) return;
+        const lp = spot.livePost;
+
+        document.getElementById('kawara-label').textContent = t('kawaraTitle');
+        document.getElementById('kawara-store-name').textContent = val(spot, 'name');
+        document.getElementById('kawara-post-title').textContent =
+            lp.title || (lp.message ? lp.message.substring(0, 14) : t('kawaraTitle'));
+        document.getElementById('kawara-text').textContent = lp.message || '';
+        document.getElementById('kawara-date').textContent = timeAgo(lp.timestamp);
+
+        const imgEl = document.getElementById('kawara-image');
+        if (lp.imageUrl) {
+            imgEl.src = lp.imageUrl;
+            imgEl.style.display = 'block';
+            imgEl.onclick = () => UIModule.openLightbox(lp.imageUrl);
+            imgEl.onerror = () => { imgEl.style.display = 'none'; };
+        } else {
+            imgEl.removeAttribute('src');
+            imgEl.style.display = 'none';
+            imgEl.onclick = null;
+        }
+
+        document.getElementById('kawara-modal-overlay').classList.add('open');
+        gtag('event', 'view_kawara', { item_id: spot.name });
+    },
+
+    closeKawaraModal(e, force) {
+        if (force || e?.target?.id === 'kawara-modal-overlay')
+            document.getElementById('kawara-modal-overlay').classList.remove('open');
     },
 
     showCoupon() {
@@ -3578,13 +3955,18 @@ const App = {
     },
 
     selectSpot(spot) {
+        State.currentSpot = spot;
         document.querySelectorAll('.custom-marker').forEach(m => m.classList.remove('active'));
-        document.getElementById(`marker-${spot.id}`)?.classList.add('active');
         // PC で折りたたまれていたら展開
         if (State.isPC && document.body.classList.contains('sidebar-collapsed')) {
             UIModule.toggleSidebar();
         }
         MapModule.flyTo(spot);
+        if (MapModule._map) {
+            MapModule._map.once('moveend', () => {
+                document.getElementById(`marker-${spot.id}`)?.classList.add('active');
+            });
+        }
         UIModule.expandCardsSheetIfCollapsed();
         UIModule.highlightCard(spot);
         gtag('event', 'select_content', { content_type: 'spot', item_id: spot.name });
