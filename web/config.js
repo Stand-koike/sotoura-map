@@ -58,14 +58,14 @@
         COLORS: { DEFAULT: '#0096C7', RED: '#FF5252', YELLOW: '#FFCA28' },
 
         // ----------------------------------------------------------------
-        // イラストマップ（300.png / 300.pgw, EPSG:6676）— 昼 1 枚のみ
+        // イラストマップ（map.png / map.pgw, EPSG:6676）— 昼 1 枚のみ
         // ----------------------------------------------------------------
         MAP_IMAGE: {
-            url:        '300.png',
+            url:        'map.png',
             dayOnly:    true,
             urlSunset:  null,
             urlNight:   null,
-            cacheVersion: '20260607-sotoura-alpha',
+            cacheVersion: '20260613-sotoura-map',
             solarLat:   null,
             solarLng:   null,
             timezone:   'Asia/Tokyo',
@@ -73,10 +73,10 @@
             duskBand:   'nautical',
 
             coordinates: [
-                [138.9681121, 34.6779157],
-                [138.9769292, 34.6778815],
-                [138.9768828, 34.6697785],
-                [138.9680665, 34.6698127]
+                [138.9435421692, 34.7041577557],
+                [138.9893797027, 34.7039822893],
+                [138.9890648462, 34.6504415010],
+                [138.9432568012, 34.6506166193]
             ],
             latOffset:  0,
             lngOffset:  0,
@@ -84,7 +84,27 @@
             initZoom:  16.8,
             minZoom:   14,
             maxZoom:   19,
-            maxBounds: [[138.9676234, 34.6693717], [138.9773723, 34.6783225]],
+            /**
+             * 起動時の表示範囲（外浦湾エリア）。未指定時はイラスト全体 fit。
+             * 順序: [NW, NE, SE, SW]
+             */
+            initViewCoordinates: [
+                [138.9681121, 34.6779157],
+                [138.9769292, 34.6778815],
+                [138.9768828, 34.6697785],
+                [138.9680665, 34.6698127]
+            ],
+            initViewPadding: { top: 70, bottom: 55, left: 45, right: 45 },
+            initViewOffset:  [0, -50],
+            /** 起動時 fit（false なら center + initZoom） */
+            initUseFitBounds: true,
+            /** minZoom は padding:0 fit + minZoomTighten（ズームアウト下限を少し上げる） */
+            minZoomOutBuffer: 0,
+            minZoomTighten: 0.45,
+            /** fitBounds オフセット px（y 負＝画面下・海側へ） */
+            seaFitOffsetX: 0,
+            seaFitOffsetY: -70,
+            maxBounds: [[138.9427568, 34.6499415], [138.9898797, 34.7046578]],
             bearing:   -90,
             pitch:     45
         },

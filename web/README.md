@@ -20,7 +20,7 @@ python -m http.server 8080
 | `config.js` | **エリア設定**（MAP_IMAGE・COLS・TRANSLATIONS 等） |
 | `config.example.js` | 新エリア用テンプレート |
 | `config.local.js` | ローカル上書き（**コミットしない**） |
-| `300.png` 等 | イラスト地図（昼のみ `dayOnly`） |
+| `map.png` 等 | イラスト地図（昼のみ `dayOnly`） |
 | `secrets.example.js` | サンプル → `secrets.local.js` に複製 |
 | `gas-line-webhook.js` | GAS 用 LINE Webhook（**秘密は GAS スクリプトプロパティ**） |
 | [LINE_INTEGRATION.md](LINE_INTEGRATION.md) | LINE 連携仕様（店舗投稿・posts 列・フロント契約） |

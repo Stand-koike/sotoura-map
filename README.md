@@ -5,7 +5,7 @@ Google スプレッドシートをデータソースに、**イラスト地図**
 
 | パス | 内容 |
 |------|------|
-| **`web/`** | デプロイ正本（外浦のみ・`300.png` + `config.js`） |
+| **`web/`** | デプロイ正本（外浦のみ・`map.png` + `config.js`） |
 | **`clients/sotoura/`** | 外浦素材正本（`.pgw` / `coordinates.json`） |
 
 ---
@@ -62,7 +62,7 @@ python -m http.server 8080
 
 `clients/sotoura/production/` → コピー → `web/` → commit & push
 
-PNG は `clients/*/production/*.png` は Git 除外。`web/300.png` はデプロイ用にコミット。
+PNG は `clients/*/production/*.png` は Git 除外。`web/map.png` はデプロイ用にコミット。
 
 ---
 

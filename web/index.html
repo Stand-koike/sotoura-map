@@ -1439,7 +1439,7 @@
 <!-- MAP CONTROLS (右下) -->
 <div class="map-controls">
     <button class="btn-control btn-gps"   onclick="MapModule.flyToUser()"><i class="fas fa-location-arrow"></i></button>
-    <button class="btn-control btn-reset" onclick="MapModule.fitBounds()"><i class="fas fa-map"></i></button>
+    <button class="btn-control btn-reset" onclick="MapModule.resetView()"><i class="fas fa-map"></i></button>
 </div>
 
 <!-- CARD PANEL -->
@@ -2378,7 +2378,12 @@ const ClusterModule = {
             Math.max(map.getZoom() + 2, this.maxZoom() + 0.5),
             map.getMaxZoom()
         );
-        map.easeTo({ center: coords, zoom: target });
+        map.easeTo({
+            center: coords,
+            zoom:   target,
+            bearing: MapModule._cameraLock().bearing,
+            pitch:   MapModule._cameraLock().pitch
+        });
     },
 
     /** ズーム ≤ clusterMaxZoom 時: 代表写真＋件数の HTML マーカーを描画 */
@@ -2511,6 +2516,178 @@ const MapModule = {
 
     _illustrationTimer:           null,
     _illustrationVisibilityBound: null,
+    _orientationLocked:           false,
+    _lockedBearing:               null,
+    _lockedPitch:                 null,
+    _resizeConstraintTimer:       null,
+
+    _cameraLock() {
+        const cfg = CONFIG.MAP_IMAGE || {};
+        const bearing = this._lockedBearing != null
+            ? this._lockedBearing
+            : (Number.isFinite(Number(cfg.bearing)) ? Number(cfg.bearing) : -90);
+        const pitch = this._lockedPitch != null
+            ? this._lockedPitch
+            : (Number.isFinite(Number(cfg.pitch)) ? Number(cfg.pitch) : 45);
+        return { bearing, pitch };
+    },
+
+    _illustrationFitPadding() {
+        return State.isPC
+            ? { top: 150, bottom: 16, left: 16, right: 16 }
+            : { top: 90, bottom: 230, left: 16, right: 16 };
+    },
+
+    /** minZoom 算出専用（パディング 0 でイラスト端 = 画面端） */
+    _illustrationMinZoomPadding() {
+        return { top: 0, bottom: 0, left: 0, right: 0 };
+    },
+
+    _illustrationBoundsPair() {
+        const coords = CONFIG.MAP_IMAGE.coordinates;
+        const [[w, n], , [e, s]] = coords;
+        return [[w, s], [e, n]];
+    },
+
+    _initViewBoundsPair() {
+        const coords = CONFIG.MAP_IMAGE.initViewCoordinates;
+        if (!Array.isArray(coords) || coords.length < 4) return null;
+        const [[w, n], , [e, s]] = coords;
+        return [[w, s], [e, n]];
+    },
+
+    _initViewPadding() {
+        const p = CONFIG.MAP_IMAGE.initViewPadding;
+        if (!p || typeof p !== 'object') return this._illustrationFitPadding();
+        if (State.isPC) return p;
+        return {
+            top:    p.top    != null ? p.top    : 60,
+            bottom: 240,
+            left:   p.left   != null ? p.left   : 30,
+            right:  p.right  != null ? p.right  : 30
+        };
+    },
+
+    _initViewOffset() {
+        const o = CONFIG.MAP_IMAGE.initViewOffset;
+        if (Array.isArray(o) && o.length >= 2) {
+            return [Number(o[0]) || 0, Number(o[1]) || 0];
+        }
+        return this._illustrationFitOffset();
+    },
+
+    _illustrationFitOffset() {
+        const cfg = CONFIG.MAP_IMAGE || {};
+        const x = Number(cfg.seaFitOffsetX);
+        const y = Number(cfg.seaFitOffsetY);
+        return [
+            Number.isFinite(x) ? x : 0,
+            Number.isFinite(y) ? y : 0
+        ];
+    },
+
+    _minZoomTighten() {
+        const v = Number(CONFIG.MAP_IMAGE?.minZoomTighten);
+        return Number.isFinite(v) ? v : 0;
+    },
+
+    /** maxBounds・回転禁止・ピッチ固定・minZoom 自動算出 */
+    _applyMapConstraints() {
+        const map = this._map;
+        const cfg = CONFIG.MAP_IMAGE;
+        if (!map || !cfg) return;
+
+        const cam = this._cameraLock();
+        this._lockedBearing = cam.bearing;
+        this._lockedPitch = cam.pitch;
+
+        if (cfg.maxBounds) map.setMaxBounds(cfg.maxBounds);
+        if (map.dragRotate) map.dragRotate.disable();
+        if (map.touchZoomRotate) map.touchZoomRotate.disableRotation();
+        map.setMinPitch(cam.pitch);
+        map.setMaxPitch(cam.pitch);
+
+        if (!this._orientationLocked) {
+            this._orientationLocked = true;
+            const snapOrientation = () => {
+                if (!this._map) return;
+                const lock = this._cameraLock();
+                if (Math.abs(this._map.getBearing() - lock.bearing) > 0.05) {
+                    this._map.setBearing(lock.bearing);
+                }
+                if (Math.abs(this._map.getPitch() - lock.pitch) > 0.05) {
+                    this._map.setPitch(lock.pitch);
+                }
+            };
+            map.on('rotate', snapOrientation);
+            map.on('pitch', snapOrientation);
+        }
+
+        this._updateMinZoomFromIllustration();
+    },
+
+    /** イラスト四隅が収まるズームを minZoom に設定（padding 0 でイラスト端=画面端） */
+    _updateMinZoomFromIllustration() {
+        const map = this._map;
+        if (!map) return;
+        const cam = this._cameraLock();
+        const saved = { center: map.getCenter(), zoom: map.getZoom() };
+
+        map.fitBounds(this._illustrationBoundsPair(), {
+            padding:  this._illustrationMinZoomPadding(),
+            bearing:  cam.bearing,
+            pitch:    cam.pitch,
+            duration: 0,
+            maxZoom:  CONFIG.MAP_IMAGE.maxZoom ?? 22
+        });
+        const minZ = map.getZoom() + this._minZoomTighten();
+        map.setMinZoom(minZ);
+
+        const restoreZoom = Math.max(saved.zoom, minZ);
+        map.jumpTo({
+            center:  saved.center,
+            zoom:    restoreZoom,
+            bearing: cam.bearing,
+            pitch:   cam.pitch
+        });
+    },
+
+    _fitIllustrationBounds(opts = {}) {
+        if (!this._map) return;
+        const cam = this._cameraLock();
+        this._map.fitBounds(this._illustrationBoundsPair(), {
+            padding:  this._illustrationFitPadding(),
+            offset:   this._illustrationFitOffset(),
+            bearing:  cam.bearing,
+            pitch:    cam.pitch,
+            duration: opts.duration != null ? opts.duration : 0,
+            maxZoom:  CONFIG.MAP_IMAGE.maxZoom ?? 22
+        });
+    },
+
+    /** 起動時: 外浦湾エリアへ fit（添付の初期フレーム） */
+    _fitInitView(opts = {}) {
+        if (!this._map) return;
+        const bounds = this._initViewBoundsPair();
+        if (!bounds) {
+            this._fitIllustrationBounds(opts);
+            return;
+        }
+        const cam = this._cameraLock();
+        this._map.fitBounds(bounds, {
+            padding:  this._initViewPadding(),
+            offset:   this._initViewOffset(),
+            bearing:  cam.bearing,
+            pitch:    cam.pitch,
+            duration: opts.duration != null ? opts.duration : 0,
+            maxZoom:  CONFIG.MAP_IMAGE.maxZoom ?? 22
+        });
+    },
+
+    /** マップリセット: イラスト全体＋固定の向き（海辺下） */
+    resetView() {
+        this._fitIllustrationBounds({ duration: 800 });
+    },
 
     init() {
         const token = CONFIG.MAPBOX_TOKEN || '';
@@ -2526,7 +2703,10 @@ const MapModule = {
             return;
         }
         mapboxgl.accessToken = token;
-        const { center, initZoom, minZoom, maxZoom, bearing = 0, pitch = 0 } = CONFIG.MAP_IMAGE;
+        const { center, initZoom, minZoom, maxZoom, bearing = -90, pitch = 45 } = CONFIG.MAP_IMAGE;
+
+        this._lockedBearing = Number.isFinite(Number(bearing)) ? Number(bearing) : -90;
+        this._lockedPitch = Number.isFinite(Number(pitch)) ? Number(pitch) : 45;
 
         this._map = new mapboxgl.Map({
             container: 'map',
@@ -2540,13 +2720,18 @@ const MapModule = {
                     paint:  { 'background-color': '#A8D8E8' }
                 }]
             },
-            center:    center,
-            zoom:      initZoom,
-            minZoom:   minZoom,
-            maxZoom:   maxZoom,
-            bearing:   bearing,
-            pitch:     pitch,
-            antialias: true
+            center:           center,
+            zoom:             initZoom,
+            minZoom:          minZoom,
+            maxZoom:          maxZoom,
+            bearing:          this._lockedBearing,
+            pitch:            this._lockedPitch,
+            minPitch:         this._lockedPitch,
+            maxPitch:         this._lockedPitch,
+            dragRotate:       false,
+            pitchWithRotate:  false,
+            touchPitchRotate: false,
+            antialias:        true
         });
         State.map = this._map;
 
@@ -2557,6 +2742,18 @@ const MapModule = {
             try {
                 LayerManager.init(this._map);
                 ClusterModule.init(this._map);
+                this._applyMapConstraints();
+                if (CONFIG.MAP_IMAGE.initUseFitBounds !== false) {
+                    this._fitInitView({ duration: 0 });
+                } else {
+                    const startZoom = Math.max(initZoom, this._map.getMinZoom());
+                    this._map.jumpTo({
+                        center,
+                        zoom:    startZoom,
+                        bearing: this._lockedBearing,
+                        pitch:   this._lockedPitch
+                    });
+                }
             } catch (e) {
                 console.error('[MapModule] レイヤー初期化エラー:', e);
             }
@@ -2597,9 +2794,20 @@ const MapModule = {
                 if (pc) document.body.classList.remove('cards-sheet-collapsed');
                 setTimeout(() => {
                     this._map.resize();
+                    this._applyMapConstraints();
                     if (State.allSpots.length > 0) this.fitBounds();
                 }, 310);
             }
+        });
+
+        window.addEventListener('resize', () => {
+            if (!this._map) return;
+            clearTimeout(this._resizeConstraintTimer);
+            this._resizeConstraintTimer = setTimeout(() => {
+                this._map.resize();
+                this._applyMapConstraints();
+                UIModule.syncMarkerDisplay();
+            }, 200);
         });
     },
 
@@ -2796,6 +3004,7 @@ const MapModule = {
         const targets = spotsVisible
             ? State.allSpots.filter(s => App._selectedCategories.has(App._effectiveFilterCategorySpot(s)))
             : [];
+        const cam = this._cameraLock();
 
         if (targets.length > 0) {
             const bounds = new mapboxgl.LngLatBounds();
@@ -2803,11 +3012,14 @@ const MapModule = {
             const padding = State.isPC
                 ? { top: 80,  bottom: 80,  left: 50, right: 50 }
                 : { top: 80, bottom: 260, left: 30, right: 30 };
-            this._map.fitBounds(bounds, { padding, duration: 800 });
+            this._map.fitBounds(bounds, {
+                padding,
+                duration: 800,
+                bearing:  cam.bearing,
+                pitch:    cam.pitch
+            });
         } else {
-            const [[w, n], , [e, s]] = CONFIG.MAP_IMAGE.coordinates;
-            const pad = State.isPC ? 30 : { top: 60, bottom: 240, left: 20, right: 20 };
-            this._map.fitBounds([[w, s], [e, n]], { padding: pad, duration: 800 });
+            this._fitIllustrationBounds({ duration: 800 });
         }
     },
 
@@ -2823,14 +3035,29 @@ const MapModule = {
             : { top: 50, bottom: 240, left: 20, right: 20 };
         const flyZoom = Number(CONFIG.CLUSTER?.flyToZoom);
         const zoom = Number.isFinite(flyZoom) ? flyZoom : 17.5;
-        this._map.flyTo({ center: spot.coords, zoom, speed: 0.8, padding, essential: true });
+        const cam = this._cameraLock();
+        this._map.flyTo({
+            center: spot.coords,
+            zoom,
+            speed: 0.8,
+            padding,
+            bearing: cam.bearing,
+            pitch:   cam.pitch,
+            essential: true
+        });
     },
 
     flyToUser() {
         if (State.userLocationMarker) {
             const flyZoom = Number(CONFIG.CLUSTER?.flyToZoom);
             const zoom = Number.isFinite(flyZoom) ? flyZoom : 17.5;
-            this._map.flyTo({ center: State.userLocationMarker.getLngLat(), zoom });
+            const cam = this._cameraLock();
+            this._map.flyTo({
+                center: State.userLocationMarker.getLngLat(),
+                zoom,
+                bearing: cam.bearing,
+                pitch:   cam.pitch
+            });
         }
     },
 
@@ -2956,7 +3183,7 @@ const UIModule = {
         }
         if (tabName === 'home') {
             this.closePanelOverlay();
-            MapModule.fitBounds();
+            MapModule.resetView();
             this._setActiveTab('tab-home');
         } else if (tabName === 'filter') {
             this.togglePanel('filter-panel');

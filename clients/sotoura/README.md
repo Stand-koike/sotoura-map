@@ -11,8 +11,8 @@
 
 | ファイル | 役割 |
 |----------|------|
-| `production/300.png` | 昼イラスト（Git 除外・`web/300.png` にコピーしてコミット） |
-| `production/300.pgw` | ワールドファイル（EPSG:6676） |
+| `production/map.png` | 昼イラスト（Git 除外・`web/map.png` にコピーしてコミット） |
+| `production/map.pgw` | ワールドファイル（EPSG:6676） |
 | `production/coordinates.json` | WGS84 四隅 → `web/config.js` 転記元 |
 
 夕・夜は未配置。追加時は `MAP_IMAGE.dayOnly: false` と sunset/night URL を設定。
@@ -20,7 +20,7 @@
 ## ローカル確認
 
 ```powershell
-Copy-Item clients\sotoura\production\300.png web\300.png   # PNG 更新時
+Copy-Item clients\sotoura\production\map.png web\map.png   # PNG 更新時
 cd web
 python -m http.server 8080
 ```
