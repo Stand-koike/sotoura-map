@@ -1439,7 +1439,7 @@
 <!-- MAP CONTROLS (右下) -->
 <div class="map-controls">
     <button class="btn-control btn-gps"   onclick="MapModule.flyToUser()"><i class="fas fa-location-arrow"></i></button>
-    <button class="btn-control btn-reset" onclick="MapModule.resetView()"><i class="fas fa-map"></i></button>
+    <button class="btn-control btn-reset" onclick="UIModule.resetHomeView()"><i class="fas fa-map"></i></button>
 </div>
 
 <!-- CARD PANEL -->
@@ -2684,9 +2684,9 @@ const MapModule = {
         });
     },
 
-    /** マップリセット: イラスト全体＋固定の向き（海辺下） */
+    /** マップリセット: 起動時と同じ初期表示（外浦湾エリア）へ戻す */
     resetView() {
-        this._fitIllustrationBounds({ duration: 800 });
+        this._fitInitView({ duration: 800 });
     },
 
     init() {
@@ -3019,7 +3019,7 @@ const MapModule = {
                 pitch:    cam.pitch
             });
         } else {
-            this._fitIllustrationBounds({ duration: 800 });
+            this._fitInitView({ duration: 800 });
         }
     },
 
@@ -3182,9 +3182,7 @@ const UIModule = {
             return;
         }
         if (tabName === 'home') {
-            this.closePanelOverlay();
-            MapModule.resetView();
-            this._setActiveTab('tab-home');
+            this.resetHomeView();
         } else if (tabName === 'filter') {
             this.togglePanel('filter-panel');
             this._setActiveTab('tab-filter');
@@ -3223,6 +3221,17 @@ const UIModule = {
         document.querySelectorAll('.ctrl-panel').forEach(p => p.classList.remove('open'));
         const overlay = document.getElementById('ctrl-panel-overlay');
         if (overlay) overlay.classList.remove('open');
+        if (!State.isPC) this._setActiveTab('tab-home');
+    },
+
+    /** ホーム／マップアイコン: パネル閉じ＋選択解除＋初期ビューへ */
+    resetHomeView() {
+        if (!State.isPC) this.closePanelOverlay();
+        State.currentSpot = null;
+        document.querySelectorAll('.custom-marker').forEach(m => m.classList.remove('active'));
+        document.querySelectorAll('.slide-card').forEach(c => c.classList.remove('active'));
+        this.closeModal(null, true);
+        MapModule.resetView();
         if (!State.isPC) this._setActiveTab('tab-home');
     },
 
