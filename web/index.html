@@ -2520,6 +2520,7 @@ const MapModule = {
     _lockedBearing:               null,
     _lockedPitch:                 null,
     _resizeConstraintTimer:       null,
+    _resetAnimTimer:              null,
 
     _cameraLock() {
         const cfg = CONFIG.MAP_IMAGE || {};
@@ -2686,7 +2687,19 @@ const MapModule = {
 
     /** マップリセット: 起動時と同じ初期表示（外浦湾エリア）へ戻す */
     resetView() {
-        this._fitInitView({ duration: 800 });
+        if (!this._map) return;
+        if (this._resetAnimTimer) clearTimeout(this._resetAnimTimer);
+        try { this._map.stop(); } catch (e) { /* 移動中でなければ無視 */ }
+        this._resetAnimTimer = setTimeout(() => {
+            if (!this._map) return;
+            this._map.resize();
+            this._map.once('moveend', () => {
+                if (typeof UIModule !== 'undefined' && UIModule.syncMarkerDisplay) {
+                    UIModule.syncMarkerDisplay();
+                }
+            });
+            this._fitInitView({ duration: 800 });
+        }, 0);
     },
 
     init() {
@@ -3086,6 +3099,7 @@ const MapModule = {
 // UIModule — フィルター・レイヤーパネル・マーカー・カード・モーダル・ティッカー
 // ================================================================
 const UIModule = {
+    _homeResetTimer: null,
 
     // ---- カテゴリフィルターパネル ----
 
@@ -3226,13 +3240,31 @@ const UIModule = {
 
     /** ホーム／マップアイコン: パネル閉じ＋選択解除＋初期ビューへ */
     resetHomeView() {
-        if (!State.isPC) this.closePanelOverlay();
+        if (this._homeResetTimer) clearTimeout(this._homeResetTimer);
+        this._homeResetTimer = setTimeout(() => this._applyHomeViewReset(), 80);
+    },
+
+    _applyHomeViewReset() {
+        this._homeResetTimer = null;
+        if (!State.isPC) {
+            this.closePanelOverlay();
+            this._setActiveTab('tab-home');
+        }
         State.currentSpot = null;
         document.querySelectorAll('.custom-marker').forEach(m => m.classList.remove('active'));
         document.querySelectorAll('.slide-card').forEach(c => c.classList.remove('active'));
         this.closeModal(null, true);
+        this.closeKawaraModal(null, true);
+        this.closeCoupon(null, true);
+
+        if (!State.isPC) {
+            const sheetWasCollapsed = document.body.classList.contains('cards-sheet-collapsed');
+            this.expandCardsSheetIfCollapsed();
+            const delay = sheetWasCollapsed ? 400 : 50;
+            setTimeout(() => MapModule.resetView(), delay);
+            return;
+        }
         MapModule.resetView();
-        if (!State.isPC) this._setActiveTab('tab-home');
     },
 
     // サイドバーの折りたたみ／展開 (PC のみ有効)
