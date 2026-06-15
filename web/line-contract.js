@@ -20,10 +20,11 @@
 
         /** 使用中のシート名（venue_spots は外浦では未使用） */
         SHEETS: {
-            POSTS:        'posts',
-            USER_MAP:     'user_map',
-            BOT_SESSIONS: 'bot_sessions',
-            PENDING:      'pending_posts'
+            POSTS:         'posts',
+            USER_MAP:      'user_map',
+            BOT_SESSIONS:  'bot_sessions',
+            PENDING:       'pending_posts',
+            STORE_INVITES: 'store_invites'
         },
 
         /**
@@ -46,14 +47,27 @@
             IS_VISIBLE:  11
         },
 
-        /** user_map: userId | role | fixed_store_id | is_active | display_name | registered_at */
+        /** user_map: userId | role | fixed_store_id | is_active | display_name | registered_at | linked_via */
         USER_MAP_COL: {
             USER_ID:        0,
             ROLE:           1,
             FIXED_STORE_ID: 2,
             IS_ACTIVE:      3,
             DISPLAY_NAME:   4,
-            REGISTERED_AT:  5
+            REGISTERED_AT:  5,
+            LINKED_VIA:     6
+        },
+
+        /** store_invites: invite_code | store_id | is_active | max_uses | use_count | expires_at | created_at | note */
+        STORE_INVITES_COL: {
+            INVITE_CODE: 0,
+            STORE_ID:    1,
+            IS_ACTIVE:   2,
+            MAX_USES:    3,
+            USE_COUNT:   4,
+            EXPIRES_AT:  5,
+            CREATED_AT:  6,
+            NOTE:        7
         },
 
         /** bot_sessions: userId | step | payload_json | updated_at */

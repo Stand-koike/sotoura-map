@@ -11,7 +11,9 @@
 
 | ファイル | 役割 |
 |----------|------|
-| `production/map.png` | 昼イラスト（Git 除外・`web/map.png` にコピーしてコミット） |
+| `production/map.png` | 昼イラスト原稿（Git 除外） |
+| `ops/optimize-map-webp.py` | 透明余白トリミング → WebP 化 → 座標再計算 |
+| `ops/map.original.png` | 最適化前 PNG の退避（Git 除外） |
 | `production/map.pgw` | ワールドファイル（EPSG:6676） |
 | `production/coordinates.json` | WGS84 四隅 → `web/config.js` 転記元 |
 
@@ -20,7 +22,9 @@
 ## ローカル確認
 
 ```powershell
-Copy-Item clients\sotoura\production\map.png web\map.png   # PNG 更新時
+# PNG 原稿を web/ に置いたあと WebP 化（座標・config 更新はスクリプト出力を config.js へ反映）
+Copy-Item clients\sotoura\production\map.png web\map.png
+python clients\sotoura\ops\optimize-map-webp.py
 cd web
 python -m http.server 8080
 ```

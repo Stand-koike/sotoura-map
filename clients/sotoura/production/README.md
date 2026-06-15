@@ -101,3 +101,42 @@ production/
 | AF | 31 | hours_en | `HOURS_EN` | |
 
 列を追加・移動した場合は `web/config.js` の `COLS` を更新し、本表も合わせて修正すること。
+
+---
+
+## LINE 店舗スタッフ紐づけ（`store_invites`）
+
+店舗・座標は **先頭シート（上表）で運営が登録**。スタッフは LINE で招待コード1通のみ送る。
+
+| 列 | ヘッダー | 内容 |
+|----|----------|------|
+| A | `invite_code` | 共有コード（例: `FUMA7K`） |
+| B | `store_id` | マスタ L列と一致 |
+| C | `is_active` | `TRUE` / `FALSE` |
+| D | `max_uses` | `0`=無制限、正の整数=上限人数 |
+| E | `use_count` | GAS が自動加算（触らない） |
+| F | `expires_at` | 空=無期限 |
+| G | `created_at` | 任意 |
+| H | `note` | メモ |
+
+**オンボーディング手順**
+
+1. 先頭シートに `store_id`, `lat`, `lng` を登録
+2. `store_invites` にコード行を追加（同一店舗で複数スタッフが同じコードを使える）
+3. スタッフへ公式 LINE + コードを共有 → コードを1通送信で紐づけ完了
+
+詳細: [web/LINE_INTEGRATION.md](../../../web/LINE_INTEGRATION.md)
+
+## `user_map`（GAS 自動更新・参照用）
+
+| 列 | ヘッダー | 内容 |
+|----|----------|------|
+| A | `userId` | LINE userId |
+| B | `role` | `store` |
+| C | `fixed_store_id` | 店舗 ID |
+| D | `is_active` | 利用停止は `FALSE` |
+| E | `display_name` | 未使用 |
+| F | `registered_at` | 紐づけ日時 |
+| G | `linked_via` | 使用した招待コード |
+
+同一 `store_id` に複数行（複数スタッフ）可。退職時は該当行を削除。

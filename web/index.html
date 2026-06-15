@@ -1626,6 +1626,7 @@ const State = {
     newsInterval:        null,
     pollInterval:        null,
     lastDataHash:        '',
+    lastPostsHash:       '',
     isPC:                window.innerWidth >= 768,
     selectedTags:        new Set(),
     postsByStoreId:      {},     // fixed 最新1件／店（カード・マーカー LIVE 用）
@@ -2045,6 +2046,10 @@ const PostsModule = {
     onLoaded(json) {
         clearTimeout(this._fetchTimeout);
         const { postsByStoreId, liveStandalonePosts } = this._parse(json);
+        const hash = JSON.stringify(postsByStoreId);
+        if (hash === State.lastPostsHash) return;
+        State.lastPostsHash = hash;
+
         State.postsByStoreId = postsByStoreId;
         State.liveStandalonePosts = liveStandalonePosts;
 
@@ -2521,6 +2526,7 @@ const MapModule = {
     _lockedPitch:                 null,
     _resizeConstraintTimer:       null,
     _resetAnimTimer:              null,
+    _lastContainerSize:           null,
 
     _cameraLock() {
         const cfg = CONFIG.MAP_IMAGE || {};
@@ -2592,8 +2598,8 @@ const MapModule = {
         return Number.isFinite(v) ? v : 0;
     },
 
-    /** maxBounds・回転禁止・ピッチ固定・minZoom 自動算出 */
-    _applyMapConstraints() {
+    /** maxBounds・回転禁止・ピッチ固定。recalcMinZoom=true のときだけ minZoom を fit 再計算 */
+    _applyMapConstraints(opts = {}) {
         const map = this._map;
         const cfg = CONFIG.MAP_IMAGE;
         if (!map || !cfg) return;
@@ -2624,7 +2630,30 @@ const MapModule = {
             map.on('pitch', snapOrientation);
         }
 
-        this._updateMinZoomFromIllustration();
+        if (opts.recalcMinZoom !== false) {
+            this._updateMinZoomFromIllustration();
+        }
+    },
+
+    _syncContainerSize() {
+        if (!this._map) return null;
+        const el = this._map.getContainer();
+        const size = { w: el.clientWidth, h: el.clientHeight };
+        this._lastContainerSize = size;
+        return size;
+    },
+
+    _containerSizeChanged() {
+        if (!this._map) return false;
+        const el = this._map.getContainer();
+        const w = el.clientWidth;
+        const h = el.clientHeight;
+        const prev = this._lastContainerSize;
+        if (!prev || prev.w !== w || prev.h !== h) {
+            this._lastContainerSize = { w, h };
+            return true;
+        }
+        return false;
     },
 
     /** イラスト四隅が収まるズームを minZoom に設定（padding 0 でイラスト端=画面端） */
@@ -2755,7 +2784,8 @@ const MapModule = {
             try {
                 LayerManager.init(this._map);
                 ClusterModule.init(this._map);
-                this._applyMapConstraints();
+                this._syncContainerSize();
+                this._applyMapConstraints({ recalcMinZoom: false });
                 if (CONFIG.MAP_IMAGE.initUseFitBounds !== false) {
                     this._fitInitView({ duration: 0 });
                 } else {
@@ -2817,8 +2847,11 @@ const MapModule = {
             if (!this._map) return;
             clearTimeout(this._resizeConstraintTimer);
             this._resizeConstraintTimer = setTimeout(() => {
+                if (!this._map) return;
+                const sizeChanged = this._containerSizeChanged();
+                if (!sizeChanged) return;
                 this._map.resize();
-                this._applyMapConstraints();
+                this._applyMapConstraints({ recalcMinZoom: true });
                 UIModule.syncMarkerDisplay();
             }, 200);
         });
@@ -2914,7 +2947,9 @@ const MapModule = {
                 source:  'illustration-map-day',
                 paint:   { 'raster-opacity': 1, 'raster-fade-duration': 0 }
             });
-            return this._waitForIllustrationSources(['day']);
+            return this._waitForIllustrationSources(['day']).then(() => {
+                this._applyMapConstraints({ recalcMinZoom: true });
+            });
         };
 
         if (location.protocol === 'file:') {

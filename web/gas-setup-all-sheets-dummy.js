@@ -30,11 +30,12 @@ const SETUP_SHEET_ID_FALLBACK = 'YOUR_GOOGLE_SHEET_ID';
  * VENUE はレガシー予約名のみ（新規作成しない）
  */
 const SETUP_NAMES = {
-  POSTS:    'posts',
-  USER_MAP: 'user_map',
-  BOT:      'bot_sessions',
-  PENDING:  'pending_posts',
-  VENUE:    'venue_spots'
+  POSTS:         'posts',
+  USER_MAP:      'user_map',
+  BOT:           'bot_sessions',
+  PENDING:       'pending_posts',
+  STORE_INVITES: 'store_invites',
+  VENUE:         'venue_spots'
 };
 
 const SETUP_ROLES = {
@@ -95,6 +96,7 @@ function setupAllSheetsWithDummyDataCore_() {
   ensurePendingSheet_(ss);
   ensureBotSessionSheet_(ss);
   ensurePostsSheet_(ss);
+  ensureStoreInvitesSheet_(ss);
 
   seedDummyPostsIfEmpty_(ss);
 
@@ -151,7 +153,7 @@ function reservedSheetNamesMap_() {
   const reserved = {};
   [
     SETUP_NAMES.USER_MAP, SETUP_NAMES.POSTS, SETUP_NAMES.VENUE,
-    SETUP_NAMES.BOT, SETUP_NAMES.PENDING
+    SETUP_NAMES.BOT, SETUP_NAMES.PENDING, SETUP_NAMES.STORE_INVITES
   ].forEach(function (name) { reserved[name] = true; });
   return reserved;
 }
@@ -232,18 +234,32 @@ function ensureUserMapSheet_(ss) {
   let sheet = ss.getSheetByName(SETUP_NAMES.USER_MAP);
   if (sheet) return;
   sheet = setupInsertSheetAtEnd_(ss, SETUP_NAMES.USER_MAP);
-  sheet.appendRow(['userId', 'role', 'fixed_store_id', 'is_active', 'display_name', 'registered_at']);
+  sheet.appendRow([
+    'userId', 'role', 'fixed_store_id', 'is_active', 'display_name', 'registered_at', 'linked_via'
+  ]);
   sheet.setFrozenRows(1);
-  styleHeaderRow_(sheet, 1, 6, '#4A90D9');
+  styleHeaderRow_(sheet, 1, 7, '#4A90D9');
 }
 
 function ensurePendingSheet_(ss) {
   let sheet = ss.getSheetByName(SETUP_NAMES.PENDING);
   if (sheet) return;
   sheet = setupInsertSheetAtEnd_(ss, SETUP_NAMES.PENDING);
-  sheet.appendRow(['userId', 'store_id', 'message', 'saved_at']);
+  sheet.appendRow(['userId', 'store_id', 'message', 'saved_at', 'image_url']);
   sheet.setFrozenRows(1);
-  styleHeaderRow_(sheet, 1, 4, '#FFA000');
+  styleHeaderRow_(sheet, 1, 5, '#FFA000');
+}
+
+function ensureStoreInvitesSheet_(ss) {
+  let sheet = ss.getSheetByName(SETUP_NAMES.STORE_INVITES);
+  if (sheet) return;
+  sheet = setupInsertSheetAtEnd_(ss, SETUP_NAMES.STORE_INVITES);
+  sheet.appendRow([
+    'invite_code', 'store_id', 'is_active', 'max_uses', 'use_count',
+    'expires_at', 'created_at', 'note'
+  ]);
+  sheet.setFrozenRows(1);
+  styleHeaderRow_(sheet, 1, 8, '#00695C');
 }
 
 function ensureBotSessionSheet_(ss) {

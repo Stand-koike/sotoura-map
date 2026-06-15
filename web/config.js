@@ -58,14 +58,14 @@
         COLORS: { DEFAULT: '#0096C7', RED: '#FF5252', YELLOW: '#FFCA28' },
 
         // ----------------------------------------------------------------
-        // イラストマップ（map.png / map.pgw, EPSG:6676）— 昼 1 枚のみ
+        // イラストマップ（map.webp / map.pgw, EPSG:6676）— 昼 1 枚のみ
         // ----------------------------------------------------------------
         MAP_IMAGE: {
-            url:        'map.png',
+            url:        'map.webp',
             dayOnly:    true,
             urlSunset:  null,
             urlNight:   null,
-            cacheVersion: '20260613-sotoura-map',
+            cacheVersion: '20260615-sotoura-map-webp',
             solarLat:   null,
             solarLng:   null,
             timezone:   'Asia/Tokyo',
@@ -73,14 +73,14 @@
             duskBand:   'nautical',
 
             coordinates: [
-                [138.9435421692, 34.7041577557],
-                [138.9893797027, 34.7039822893],
-                [138.9890648462, 34.6504415010],
-                [138.9432568012, 34.6506166193]
+                [138.9467077202, 34.6963523018],
+                [138.9883642749, 34.6961924889],
+                [138.9881219182, 34.6548949351],
+                [138.9464860344, 34.6550545035]
             ],
             latOffset:  0,
             lngOffset:  0,
-            center:    [138.9724978, 34.6738471],
+            center:    [138.9674148192, 34.6756236185],
             initZoom:  16.8,
             minZoom:   14,
             maxZoom:   19,
@@ -104,7 +104,7 @@
             /** fitBounds オフセット px（y 負＝画面下・海側へ） */
             seaFitOffsetX: 0,
             seaFitOffsetY: -70,
-            maxBounds: [[138.9427568, 34.6499415], [138.9898797, 34.7046578]],
+            maxBounds: [[138.9424860, 34.6508949], [138.9923643, 34.7003523]],
             bearing:   -90,
             pitch:     45
         },
