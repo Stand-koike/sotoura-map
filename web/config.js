@@ -81,26 +81,29 @@
             latOffset:  0,
             lngOffset:  0,
             center:    [138.9674148192, 34.6756236185],
-            initZoom:  16.8,
-            minZoom:   14,
+            /** 起動時の表示中心（海岸・ビーチ中央）とズーム */
+            initCenter: [138.97244739182608, 34.675168669479824],
+            initZoom:  16.7,
+            /** fit 算出後の下限（これ未満にはズームアウト不可） */
+            minZoom:   16.2,
             maxZoom:   19,
+            initUseFitBounds: false,
             /**
-             * 起動時の表示範囲（外浦湾エリア）。未指定時はイラスト全体 fit。
+             * ズームアウト下限フレーム（center から約 38% の範囲）。
+             * イラスト全体だと fit が頭打ちになるため、意図的に狭く指定。
              * 順序: [NW, NE, SE, SW]
              */
-            initViewCoordinates: [
-                [138.9681121, 34.6779157],
-                [138.9769292, 34.6778815],
-                [138.9768828, 34.6697785],
-                [138.9680665, 34.6698127]
+            minZoomViewCoordinates: [
+                [138.9595461, 34.6835005],
+                [138.9753756, 34.6834398],
+                [138.9752835, 34.6677467],
+                [138.9594619, 34.6678074]
             ],
-            initViewPadding: { top: 70, bottom: 55, left: 45, right: 45 },
-            initViewOffset:  [0, -50],
-            /** 起動時 fit（false なら center + initZoom） */
-            initUseFitBounds: true,
-            /** minZoom は padding:0 fit + minZoomTighten（ズームアウト下限を少し上げる） */
+            /** minZoom fitBounds 用パディング（PC は下ナビなし） */
+            minZoomViewPadding: { top: 90, bottom: 80, left: 50, right: 20, mobileBottom: 240 },
+            /** minZoom = max(fit + minZoomTighten, minZoom) */
             minZoomOutBuffer: 0,
-            minZoomTighten: 0.45,
+            minZoomTighten: 1.0,
             /** fitBounds オフセット px（y 負＝画面下・海側へ） */
             seaFitOffsetX: 0,
             seaFitOffsetY: -70,

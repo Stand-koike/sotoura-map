@@ -2527,6 +2527,7 @@ const MapModule = {
     _resizeConstraintTimer:       null,
     _resetAnimTimer:              null,
     _lastContainerSize:           null,
+    _initViewApplied:             false,
 
     _cameraLock() {
         const cfg = CONFIG.MAP_IMAGE || {};
@@ -2563,13 +2564,39 @@ const MapModule = {
         return [[w, s], [e, n]];
     },
 
+    _minZoomViewBoundsPair() {
+        const coords = CONFIG.MAP_IMAGE.minZoomViewCoordinates || CONFIG.MAP_IMAGE.coordinates;
+        if (!Array.isArray(coords) || coords.length < 4) return this._illustrationBoundsPair();
+        const [[w, n], , [e, s]] = coords;
+        return [[w, s], [e, n]];
+    },
+
+    _minZoomViewPadding() {
+        const p = CONFIG.MAP_IMAGE.minZoomViewPadding;
+        if (!p || typeof p !== 'object') return this._illustrationMinZoomPadding();
+        if (State.isPC) {
+            return {
+                top:    p.top    != null ? p.top    : 150,
+                bottom: p.bottom != null ? p.bottom : 16,
+                left:   p.left   != null ? p.left   : 16,
+                right:  p.right  != null ? p.right  : 16
+            };
+        }
+        return {
+            top:    p.top    != null ? p.top    : 90,
+            bottom: p.mobileBottom != null ? p.mobileBottom : (p.bottom != null ? p.bottom : 240),
+            left:   p.left   != null ? p.left   : 16,
+            right:  p.right  != null ? p.right  : 16
+        };
+    },
+
     _initViewPadding() {
         const p = CONFIG.MAP_IMAGE.initViewPadding;
         if (!p || typeof p !== 'object') return this._illustrationFitPadding();
         if (State.isPC) return p;
         return {
             top:    p.top    != null ? p.top    : 60,
-            bottom: 240,
+            bottom: p.mobileBottom != null ? p.mobileBottom : 160,
             left:   p.left   != null ? p.left   : 30,
             right:  p.right  != null ? p.right  : 30
         };
@@ -2595,7 +2622,9 @@ const MapModule = {
 
     _minZoomTighten() {
         const v = Number(CONFIG.MAP_IMAGE?.minZoomTighten);
-        return Number.isFinite(v) ? v : 0;
+        const base = Number.isFinite(v) ? v : 0;
+        const buf = Number(CONFIG.MAP_IMAGE?.minZoomOutBuffer);
+        return base + (Number.isFinite(buf) ? buf : 0);
     },
 
     /** maxBounds・回転禁止・ピッチ固定。recalcMinZoom=true のときだけ minZoom を fit 再計算 */
@@ -2656,30 +2685,30 @@ const MapModule = {
         return false;
     },
 
-    /** イラスト四隅が収まるズームを minZoom に設定（padding 0 でイラスト端=画面端） */
+    /** ズームアウト下限を cameraForBounds で算出（カメラ位置は変えない） */
     _updateMinZoomFromIllustration() {
         const map = this._map;
         if (!map) return;
+        const cfg = CONFIG.MAP_IMAGE;
         const cam = this._cameraLock();
-        const saved = { center: map.getCenter(), zoom: map.getZoom() };
-
-        map.fitBounds(this._illustrationBoundsPair(), {
-            padding:  this._illustrationMinZoomPadding(),
+        const camera = map.cameraForBounds(this._minZoomViewBoundsPair(), {
+            padding:  this._minZoomViewPadding(),
             bearing:  cam.bearing,
             pitch:    cam.pitch,
-            duration: 0,
-            maxZoom:  CONFIG.MAP_IMAGE.maxZoom ?? 22
+            maxZoom:  cfg.maxZoom ?? 22
         });
-        const minZ = map.getZoom() + this._minZoomTighten();
+        if (!camera) return;
+        const fitMinZ = camera.zoom + this._minZoomTighten();
+        const floorMinZ = Number(cfg.minZoom);
+        const initZ = Number(cfg.initZoom);
+        let minZ = Number.isFinite(floorMinZ) && floorMinZ > 0
+            ? Math.max(fitMinZ, floorMinZ)
+            : fitMinZ;
+        /* initZoom から大きく離れないよう上限（ズームアウト過多を防止） */
+        if (Number.isFinite(initZ) && initZ > 0) {
+            minZ = Math.max(minZ, initZ - 0.5);
+        }
         map.setMinZoom(minZ);
-
-        const restoreZoom = Math.max(saved.zoom, minZ);
-        map.jumpTo({
-            center:  saved.center,
-            zoom:    restoreZoom,
-            bearing: cam.bearing,
-            pitch:   cam.pitch
-        });
     },
 
     _fitIllustrationBounds(opts = {}) {
@@ -2695,23 +2724,38 @@ const MapModule = {
         });
     },
 
-    /** 起動時: 外浦湾エリアへ fit（添付の初期フレーム） */
-    _fitInitView(opts = {}) {
+    /** 起動時表示を適用（initCenter + initZoom で直接指定） */
+    _applyInitView(opts = {}) {
         if (!this._map) return;
-        const bounds = this._initViewBoundsPair();
-        if (!bounds) {
-            this._fitIllustrationBounds(opts);
-            return;
-        }
+        const cfg = CONFIG.MAP_IMAGE;
         const cam = this._cameraLock();
-        this._map.fitBounds(bounds, {
-            padding:  this._initViewPadding(),
-            offset:   this._initViewOffset(),
-            bearing:  cam.bearing,
-            pitch:    cam.pitch,
-            duration: opts.duration != null ? opts.duration : 0,
-            maxZoom:  CONFIG.MAP_IMAGE.maxZoom ?? 22
-        });
+        const minZ = this._map.getMinZoom();
+
+        const center = (Array.isArray(cfg.initCenter) && cfg.initCenter.length >= 2)
+            ? cfg.initCenter
+            : cfg.center;
+        const zoom = Math.max(Number(cfg.initZoom) || 16, minZ);
+        const duration = opts.duration != null ? opts.duration : 0;
+
+        if (duration > 0) {
+            this._map.easeTo({ center, zoom, bearing: cam.bearing, pitch: cam.pitch, duration });
+        } else {
+            this._map.jumpTo({ center, zoom, bearing: cam.bearing, pitch: cam.pitch });
+        }
+    },
+
+    /** イラスト読込・リサイズ後: minZoom 再計算 → 初期表示 */
+    _finalizeInitView(opts = {}) {
+        if (!this._map) return;
+        this._map.resize();
+        this._applyMapConstraints({ recalcMinZoom: true });
+        this._applyInitView(opts);
+        this._initViewApplied = true;
+    },
+
+    /** @deprecated _applyInitView を使用 */
+    _fitInitView(opts = {}) {
+        this._applyInitView(opts);
     },
 
     /** マップリセット: 起動時と同じ初期表示（外浦湾エリア）へ戻す */
@@ -2727,7 +2771,7 @@ const MapModule = {
                     UIModule.syncMarkerDisplay();
                 }
             });
-            this._fitInitView({ duration: 800 });
+            this._applyInitView({ duration: 800 });
         }, 0);
     },
 
@@ -2785,18 +2829,8 @@ const MapModule = {
                 LayerManager.init(this._map);
                 ClusterModule.init(this._map);
                 this._syncContainerSize();
+                this._map.resize();
                 this._applyMapConstraints({ recalcMinZoom: false });
-                if (CONFIG.MAP_IMAGE.initUseFitBounds !== false) {
-                    this._fitInitView({ duration: 0 });
-                } else {
-                    const startZoom = Math.max(initZoom, this._map.getMinZoom());
-                    this._map.jumpTo({
-                        center,
-                        zoom:    startZoom,
-                        bearing: this._lockedBearing,
-                        pitch:   this._lockedPitch
-                    });
-                }
             } catch (e) {
                 console.error('[MapModule] レイヤー初期化エラー:', e);
             }
@@ -2808,6 +2842,9 @@ const MapModule = {
                 .catch((e) => {
                     console.error('[MapModule] イラストレイヤ読込:', e);
                     return this._addIllustrationMapDayFallback();
+                })
+                .then(() => {
+                    this._finalizeInitView({ duration: 0 });
                 })
                 .catch((e2) => console.error('[MapModule] イラスト昼フォールバック失敗:', e2));
         };
@@ -2823,6 +2860,8 @@ const MapModule = {
             if (!this._loaded) {
                 console.warn('[MapModule] load タイムアウト — 強制的にデータ取得を開始');
                 onMapReady();
+            } else if (this._map && !this._initViewApplied) {
+                this._finalizeInitView({ duration: 0 });
             }
         }, 8000);
 
@@ -2947,9 +2986,7 @@ const MapModule = {
                 source:  'illustration-map-day',
                 paint:   { 'raster-opacity': 1, 'raster-fade-duration': 0 }
             });
-            return this._waitForIllustrationSources(['day']).then(() => {
-                this._applyMapConstraints({ recalcMinZoom: true });
-            });
+            return this._waitForIllustrationSources(['day']);
         };
 
         if (location.protocol === 'file:') {
@@ -3067,7 +3104,7 @@ const MapModule = {
                 pitch:    cam.pitch
             });
         } else {
-            this._fitInitView({ duration: 800 });
+            this._applyInitView({ duration: 800 });
         }
     },
 
