@@ -2,10 +2,12 @@
 
 **契約の正本:** [line-contract.js](line-contract.js)（シート名・列 index・ロール・sourceType）
 
+**運用・導入資料（店舗向け）:** [docs/LINE_ONBOARDING.md](docs/LINE_ONBOARDING.md)
+
 | 実装 | 役割 |
 |------|------|
 | [line-contract.js](line-contract.js) | フロント用契約（`config.js` が読み込み） |
-| [gas-line-webhook.js](gas-line-webhook.js) 先頭 `LINE_*` | GAS 用契約（単体デプロイのためコピー保持） |
+| [gas-line-webhook.js](gas-line-webhook.js) 先頭 `LINE_*` | GAS 用契約（**`gas/line-webhook/` から自動生成**・単体デプロイ用にコピー保持） |
 | [index.html](index.html) `PostsModule` | posts シートの gviz 読み取り |
 
 改修時は **line-contract.js と GAS の `LINE_*` を同期**し、列順・ロール名・`sourceType` の整合を保ってください。
@@ -195,7 +197,42 @@ sequenceDiagram
 ## 12. デプロイ時チェックリスト
 
 1. GAS スクリプトプロパティに `SHEET_ID` / `LINE_CHANNEL_ACCESS_TOKEN`
-2. `gas-line-webhook.js` を GAS に貼り付け・**新バージョンでデプロイ**
-3. `setupSheets()` または `setupAllSheetsWithDummyData` で `store_invites` シート作成
-4. 店舗マスタの `store_id` 列が index 11 であること
-5. スプレッドシートを gviz 可能な共有設定に
+2. ソース変更時は `python web/gas/build-line-webhook.py` で `gas-line-webhook.js` を再生成
+3. `gas-line-webhook.js` を GAS に貼り付け・**新バージョンでデプロイ**
+4. `setupSheets()` または `setupAllSheetsWithDummyData` で `store_invites` シート作成
+5. 店舗マスタの `store_id` 列が index 11 であること
+6. スプレッドシートを gviz 可能な共有設定に
+
+---
+
+## 13. リッチメニュー（1種類・切替なし）
+
+**GAS はメニュー切替を行いません。** LINE 管理画面で **1枚だけ** 設定します。
+
+**画像:** [assets/rich-menu/rich-menu-store.png](assets/rich-menu/rich-menu-store.png)（2500×1686）  
+**詳細:** [assets/rich-menu/README.md](assets/rich-menu/README.md)
+
+### 13.1 ボタン（4つ・全員共通）
+
+| ボタン | アクション | 送信内容 |
+|--------|------------|----------|
+| ヘルプ | テキスト | `ヘルプ` |
+| 例文 | テキスト | 1行目 `本日のおすすめ`、2行目 `（ここに本文）` |
+| 登録確認 | テキスト | `登録確認` |
+| マップを見る | リンク | `https://stand-koike.github.io/sotoura-map/` |
+
+- テキストアクションは **50字以内**
+- **例文** … 紐づけ済み店舗スタッフ向け（テキスト受付 → 続けて写真）。未登録の場合は案内メッセージ
+- **初回登録** … 招待コードを手入力（`ヘルプ` に手順あり）。`登録の流れ` と送っても GAS が案内可
+- `登録解除` / `マイID` は **手入力**
+- 投稿は **テキスト → 写真**（メニューからカメラは開けない）
+
+### 13.2 LINE Official Account Manager 手順
+
+1. [LINE Official Account Manager](https://manager.line.biz/) → **リッチメニュー**
+2. **1枚だけ** 作成（2500×1686、2×2）→ 上記4ボタンを設定
+3. **デフォルトのリッチメニュー ON** → 公開
+4. 表示期間: 開始＝今日、終了＝**2036-12-31** など遠い未来（終了日なしは不可）
+5. 旧メニューがある場合は **停止** してから新規公開（表示期間の重複エラーを避ける）
+
+**Collapsed（折りたたみ）** はメニューバーの初期表示だけの設定で、デフォルト ON/OFF とは別です。

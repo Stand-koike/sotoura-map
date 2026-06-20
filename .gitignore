@@ -6,8 +6,8 @@ Desktop.ini
 # IDE（任意・チームで共有する場合のみコミット）
 .vscode/
 
-# 設計・運用ドキュメントはローカルのみ
-docs/
+# 設計・運用ドキュメントはローカルのみ（ルート docs/ のみ。web/docs/ はコミット可）
+/docs/
 
 # ローカル秘密設定
 web/secrets.local.js
@@ -33,6 +33,14 @@ meta/*
 
 # ルートの元ラスタ
 *.tif
+
+# ルート直下の作業用素材（正本は clients/sotoura/source/）
+/image/
+
+# 地図キャリブレーションの一時出力
+tools/_cal/
+tools/*.png
+tools/minzoom_probe.json
 
 # 編集バックアップ
 * - コピー.*

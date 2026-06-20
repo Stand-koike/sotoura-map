@@ -6,7 +6,8 @@ Google スプレッドシートをデータソースに、**イラスト地図**
 | パス | 内容 |
 |------|------|
 | **`web/`** | デプロイ正本（外浦のみ・`map.webp` + `config.js`） |
-| **`clients/sotoura/`** | 外浦素材正本（`.pgw` / `coordinates.json`） |
+| **`clients/sotoura/`** | 外浦素材正本（`.pgw` / `coordinates.json` / `source/`） |
+| **`tools/`** | 地図キャリブレーション用ローカルスクリプト（非デプロイ） |
 
 ---
 
@@ -80,4 +81,5 @@ python -m http.server 8080
 ## GitHub に載せないもの
 
 - `web/secrets.local.js` 等（`.gitignore` 参照）
-- `docs/`（ローカル専用）
+- `docs/`（ルート・ローカル専用）
+- `clients/sotoura/source/` / `clients/sotoura/ops/`（生素材・運用メモ）

@@ -22,8 +22,11 @@ python -m http.server 8080
 | `config.local.js` | ローカル上書き（**コミットしない**） |
 | `map.webp` 等 | イラスト地図（昼のみ `dayOnly`） |
 | `secrets.example.js` | サンプル → `secrets.local.js` に複製 |
-| `gas-line-webhook.js` | GAS 用 LINE Webhook（**秘密は GAS スクリプトプロパティ**） |
+| `gas-line-webhook.js` | GAS 用 LINE Webhook（**自動生成物**・秘密は GAS スクリプトプロパティ） |
+| [gas/](gas/README.md) | GAS **編集用ソース**・ビルドスクリプト・シート初期化 |
 | [LINE_INTEGRATION.md](LINE_INTEGRATION.md) | LINE 連携仕様（店舗投稿・posts 列・フロント契約） |
+| [docs/LINE_ONBOARDING.md](docs/LINE_ONBOARDING.md) | **導入資料**（運営手順・LINE 登録シミュレーション画像付き） |
+| [assets/rich-menu/README.md](assets/rich-menu/README.md) | **リッチメニュー**画像仕様・ボタン文言 |
 
 ---
 
@@ -39,6 +42,28 @@ python -m http.server 8080
 | イラスト地図（昼のみ） | 有効 |
 | 中央上部ニュースティッカー | **非表示** |
 | 神轎ルート / 祭スケジュール | **削除**（将来拡張余地あり） |
+
+---
+
+## LINE Webhook（GAS）の編集
+
+`gas-line-webhook.js` は **`web/gas/line-webhook/`** 内の 7 ファイルを結合した自動生成物です。ロジックを変更するときはモジュールを編集し、再生成してください。
+
+```bash
+python web/gas/build-line-webhook.py
+```
+
+生成後、GAS エディタに `gas-line-webhook.js` を貼り付けて**新バージョンでデプロイ**します。GAS 上で複数 `.gs` ファイルに分割して配置しても動作します（ファイル名の数字順が実行順）。
+
+| モジュール | 内容 |
+|------------|------|
+| `01-contract.js` | 定数・MSG 文言 |
+| `02-infrastructure.js` | 設定・キャッシュ・ユーティリティ |
+| `03-sheets.js` | シート操作・招待コード |
+| `04-line-api.js` | LINE reply/push・画像取得 |
+| `05-posting.js` | 投稿フロー |
+| `06-routing.js` | `doPost` / `doGet` ルーティング |
+| `07-admin-setup.js` | ヘルプ・管理者・セットアップ |
 
 ---
 

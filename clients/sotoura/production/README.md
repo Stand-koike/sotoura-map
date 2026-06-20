@@ -125,7 +125,8 @@ production/
 2. `store_invites` にコード行を追加（同一店舗で複数スタッフが同じコードを使える）
 3. スタッフへ公式 LINE + コードを共有 → コードを1通送信で紐づけ完了
 
-詳細: [web/LINE_INTEGRATION.md](../../../web/LINE_INTEGRATION.md)
+詳細: [web/LINE_INTEGRATION.md](../../../web/LINE_INTEGRATION.md)  
+導入資料（店舗向け・画像付き）: [web/docs/LINE_ONBOARDING.md](../../../web/docs/LINE_ONBOARDING.md)
 
 ## `user_map`（GAS 自動更新・参照用）
 
