@@ -42,6 +42,9 @@ tools/_cal/
 tools/*.png
 tools/minzoom_probe.json
 
+# web/ 直下にラスタ原稿を置かない（本番は map.webp。assets/ 配下は除外）
+web/*.png
+
 # 編集バックアップ
 * - コピー.*
 * - copy.*

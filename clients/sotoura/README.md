@@ -12,6 +12,8 @@
 | ファイル | 役割 |
 |----------|------|
 | `production/map.png` | 昼イラスト原稿（Git 除外） |
+| `source/map/300.png` | 旧版原稿の退避（Git 除外・`web/` には置かない） |
+| `web/map.webp` | 本番デプロイ用地図（WebP 化して `web/` に配置） |
 | `ops/optimize-map-webp.py` | 透明余白トリミング → WebP 化 → 座標再計算 |
 | `ops/map.original.png` | 最適化前 PNG の退避（Git 除外） |
 | `production/map.pgw` | ワールドファイル（EPSG:6676） |

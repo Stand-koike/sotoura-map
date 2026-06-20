@@ -20,7 +20,7 @@ python -m http.server 8080
 | `config.js` | **エリア設定**（MAP_IMAGE・COLS・TRANSLATIONS 等） |
 | `config.example.js` | 新エリア用テンプレート |
 | `config.local.js` | ローカル上書き（**コミットしない**） |
-| `map.webp` 等 | イラスト地図（昼のみ `dayOnly`） |
+| `map.webp` | 本番用イラスト地図（`dayOnly`・PNG 原稿は `clients/sotoura/` に置く） |
 | `secrets.example.js` | サンプル → `secrets.local.js` に複製 |
 | `gas-line-webhook.js` | GAS 用 LINE Webhook（**自動生成物**・秘密は GAS スクリプトプロパティ） |
 | [gas/](gas/README.md) | GAS **編集用ソース**・ビルドスクリプト・シート初期化 |

@@ -43,7 +43,7 @@ git push -u origin main
 ## 5. 確認
 
 - タブタイトル「外浦マップ」
-- イラスト `300.png` が表示
+- イラスト `map.webp` が表示（旧 `300.png` は `clients/sotoura/source/map/` に退避）
 - `web/` に `100.png` 系がないこと（本リポのみ）
 
 ## トラブルシュート
