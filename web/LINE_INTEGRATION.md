@@ -4,6 +4,8 @@
 
 **運用・導入資料（店舗向け）:** [docs/LINE_ONBOARDING.md](docs/LINE_ONBOARDING.md)
 
+**WordPress 連携（エンジニア向け）:** [docs/WORDPRESS_INTEGRATION.md](docs/WORDPRESS_INTEGRATION.md)
+
 | 実装 | 役割 |
 |------|------|
 | [line-contract.js](line-contract.js) | フロント用契約（`config.js` が読み込み） |

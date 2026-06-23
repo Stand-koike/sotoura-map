@@ -6,6 +6,7 @@
 **関連ドキュメント**
 
 - 技術仕様: [LINE_INTEGRATION.md](../LINE_INTEGRATION.md)
+- WordPress 連携: [WORDPRESS_INTEGRATION.md](./WORDPRESS_INTEGRATION.md)
 - 運営向け列定義: [clients/sotoura/production/README.md](../../clients/sotoura/production/README.md)
 - スプレッドシート: [外浦MAP](https://docs.google.com/spreadsheets/d/16E1nAfvtlVSVCaXfHSfzlAWIAHXeuQWudxFssreehy4/edit)
 

@@ -18,6 +18,8 @@
  *   <script src="https://YOUR_GITHUB_PAGES/web/wordpress-kawara-widget.js"></script>
  *
  * 秘密情報は WordPress 側に置かない（GAS URL は公開可・読み取り専用 API）。
+ *
+ * エンジニア向け仕様: web/docs/WORDPRESS_INTEGRATION.md
  */
 (function () {
     'use strict';
