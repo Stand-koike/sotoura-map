@@ -246,6 +246,7 @@ JSON で `posts` 配列が返れば API は正常。
 
 | 資料 | 対象 |
 |------|------|
+| [CLIENT_HANDOVER.md](./CLIENT_HANDOVER.md) | クライアント引き継ぎ・移管一覧 |
 | [LINE_INTEGRATION.md](../LINE_INTEGRATION.md) | LINE・GAS・シート全体 |
 | [LINE_ONBOARDING.md](./LINE_ONBOARDING.md) | 店舗・運営向け手順（非エンジニア） |
 | [gas/README.md](../gas/README.md) | GAS モジュール構成・ビルド |

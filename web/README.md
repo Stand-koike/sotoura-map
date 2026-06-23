@@ -26,6 +26,7 @@ python -m http.server 8080
 | [gas/](gas/README.md) | GAS **編集用ソース**・ビルドスクリプト・シート初期化 |
 | [LINE_INTEGRATION.md](LINE_INTEGRATION.md) | LINE 連携仕様（店舗投稿・posts 列・フロント契約） |
 | [docs/LINE_ONBOARDING.md](docs/LINE_ONBOARDING.md) | **導入資料**（運営手順・LINE 登録シミュレーション画像付き） |
+| [docs/CLIENT_HANDOVER.md](docs/CLIENT_HANDOVER.md) | **クライアント受け渡し**（移管チェックリスト・画像保存先） |
 | [docs/WORDPRESS_INTEGRATION.md](docs/WORDPRESS_INTEGRATION.md) | **WordPress かわら版**（エンジニア向け・API・埋め込み） |
 | [wordpress-kawara-widget.js](wordpress-kawara-widget.js) | WordPress 埋め込み用ウィジェット本体 |
 | [assets/rich-menu/README.md](assets/rich-menu/README.md) | **リッチメニュー**画像仕様・ボタン文言 |

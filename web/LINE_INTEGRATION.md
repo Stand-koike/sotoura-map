@@ -125,7 +125,7 @@ sequenceDiagram
 | 3 | `sourceType` | 店舗は `fixed` のみ |
 | 4 | `title` | タイトル |
 | 5 | `text` | 本文 |
-| 6 | `imageUrl` | Drive サムネ URL |
+| 6 | `imageUrl` | Drive サムネ URL（保存先フォルダ: **`LINE_MAP_IMAGES`** — GAS 実行 Google アカウントの Drive。詳細: [docs/CLIENT_HANDOVER.md](docs/CLIENT_HANDOVER.md) §4） |
 | 7–8 | `lat` / `lng` | 表示座標 |
 | 9 | `storeId` | 店舗紐付け |
 | 10 | `createdAt` | 作成日時 |

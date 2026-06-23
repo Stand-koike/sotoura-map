@@ -78,6 +78,12 @@ python -m http.server 8080
 
 ---
 
+## クライアント受け渡し
+
+引き継ぎ・移管に必要な一覧は [web/docs/CLIENT_HANDOVER.md](web/docs/CLIENT_HANDOVER.md) を参照。
+
+---
+
 ## GitHub に載せないもの
 
 - `web/secrets.local.js` 等（`.gitignore` 参照）
