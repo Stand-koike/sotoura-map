@@ -3,204 +3,6 @@
   "children": [
     {
       "type": "frame",
-      "id": "F43haT",
-      "x": 0,
-      "y": 0,
-      "name": "rich-menu-guest",
-      "clip": true,
-      "width": 2500,
-      "height": 1686,
-      "fill": {
-        "type": "gradient",
-        "gradientType": "linear",
-        "enabled": true,
-        "rotation": 180,
-        "size": {
-          "height": 1
-        },
-        "colors": [
-          {
-            "color": "#E0F7FF",
-            "position": 0
-          },
-          {
-            "color": "#FFFFFF",
-            "position": 0.55
-          },
-          {
-            "color": "#F8FCFF",
-            "position": 1
-          }
-        ]
-      },
-      "layout": "vertical",
-      "children": [
-        {
-          "type": "frame",
-          "id": "c5LkWT",
-          "name": "Row1",
-          "width": "fill_container",
-          "height": 843,
-          "children": [
-            {
-              "type": "frame",
-              "id": "qH7Iz",
-              "name": "使い方",
-              "width": "fill_container",
-              "height": "fill_container",
-              "fill": "#FFFFFF",
-              "stroke": "#B8E4F0",
-              "strokeWidth": 2,
-              "strokeAlignment": "inner",
-              "layout": "vertical",
-              "gap": 24,
-              "justifyContent": "center",
-              "alignItems": "center",
-              "children": [
-                {
-                  "type": "icon",
-                  "id": "kFK8Y",
-                  "width": 128,
-                  "height": 128,
-                  "icon": "help",
-                  "library": "Material Symbols Rounded",
-                  "fill": "#0096C7"
-                },
-                {
-                  "type": "text",
-                  "id": "NZeFG",
-                  "fill": "#1A3A4A",
-                  "content": "使い方",
-                  "textAlign": "center",
-                  "fontFamily": "Inter",
-                  "fontSize": 80,
-                  "fontWeight": "700"
-                }
-              ]
-            },
-            {
-              "type": "frame",
-              "id": "q8TYMP",
-              "name": "マイID",
-              "width": "fill_container",
-              "height": "fill_container",
-              "fill": "#E0F7FF",
-              "stroke": "#B8E4F0",
-              "strokeWidth": 2,
-              "strokeAlignment": "inner",
-              "layout": "vertical",
-              "gap": 24,
-              "justifyContent": "center",
-              "alignItems": "center",
-              "children": [
-                {
-                  "type": "icon",
-                  "id": "PHDLb",
-                  "width": 128,
-                  "height": 128,
-                  "icon": "badge",
-                  "library": "Material Symbols Rounded",
-                  "fill": "#0077B6"
-                },
-                {
-                  "type": "text",
-                  "id": "Cv0FF",
-                  "fill": "#1A3A4A",
-                  "content": "マイID",
-                  "textAlign": "center",
-                  "fontFamily": "Inter",
-                  "fontSize": 80,
-                  "fontWeight": "700"
-                }
-              ]
-            }
-          ]
-        },
-        {
-          "type": "frame",
-          "id": "QCosV",
-          "name": "Row2",
-          "width": "fill_container",
-          "height": 843,
-          "children": [
-            {
-              "type": "frame",
-              "id": "zmacg",
-              "name": "登録の流れ",
-              "width": "fill_container",
-              "height": "fill_container",
-              "fill": "#E0F7FF",
-              "stroke": "#B8E4F0",
-              "strokeWidth": 2,
-              "strokeAlignment": "inner",
-              "layout": "vertical",
-              "gap": 24,
-              "justifyContent": "center",
-              "alignItems": "center",
-              "children": [
-                {
-                  "type": "icon",
-                  "id": "H2M7w",
-                  "width": 128,
-                  "height": 128,
-                  "icon": "playlist_add_check",
-                  "library": "Material Symbols Rounded",
-                  "fill": "#0096C7"
-                },
-                {
-                  "type": "text",
-                  "id": "oFl0g",
-                  "fill": "#1A3A4A",
-                  "content": "登録の流れ",
-                  "textAlign": "center",
-                  "fontFamily": "Inter",
-                  "fontSize": 72,
-                  "fontWeight": "700"
-                }
-              ]
-            },
-            {
-              "type": "frame",
-              "id": "gqeLW",
-              "name": "マップを見る",
-              "width": "fill_container",
-              "height": "fill_container",
-              "fill": "#FFFFFF",
-              "stroke": "#B8E4F0",
-              "strokeWidth": 2,
-              "strokeAlignment": "inner",
-              "layout": "vertical",
-              "gap": 24,
-              "justifyContent": "center",
-              "alignItems": "center",
-              "children": [
-                {
-                  "type": "icon",
-                  "id": "OinXh",
-                  "width": 128,
-                  "height": 128,
-                  "icon": "map",
-                  "library": "Material Symbols Rounded",
-                  "fill": "#FF7043"
-                },
-                {
-                  "type": "text",
-                  "id": "Hcrr9",
-                  "fill": "#1A3A4A",
-                  "content": "マップを見る",
-                  "textAlign": "center",
-                  "fontFamily": "Inter",
-                  "fontSize": 72,
-                  "fontWeight": "700"
-                }
-              ]
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "type": "frame",
       "id": "E1Wbl",
       "x": 2580,
       "y": 0,
@@ -244,8 +46,8 @@
                 {
                   "type": "icon",
                   "id": "wVjXD",
-                  "width": 128,
-                  "height": 128,
+                  "width": 503,
+                  "height": 340,
                   "icon": "help",
                   "library": "Material Symbols Rounded",
                   "fill": "#0096C7"
@@ -257,7 +59,7 @@
                   "content": "ヘルプ",
                   "textAlign": "center",
                   "fontFamily": "Inter",
-                  "fontSize": 80,
+                  "fontSize": 120,
                   "fontWeight": "700"
                 }
               ]
@@ -273,15 +75,15 @@
               "strokeWidth": 2,
               "strokeAlignment": "inner",
               "layout": "vertical",
-              "gap": 24,
+              "gap": 10,
               "justifyContent": "center",
               "alignItems": "center",
               "children": [
                 {
                   "type": "icon",
                   "id": "M2NKx",
-                  "width": 128,
-                  "height": 128,
+                  "width": 400,
+                  "height": 364,
                   "icon": "edit_note",
                   "library": "Material Symbols Rounded",
                   "fill": "#00BCD4"
@@ -289,11 +91,15 @@
                 {
                   "type": "text",
                   "id": "PG2Q1",
+                  "rotation": -0.42860027094377906,
                   "fill": "#1A3A4A",
+                  "textGrowth": "fixed-width-height",
+                  "width": 412,
+                  "height": 179,
                   "content": "例文",
                   "textAlign": "center",
                   "fontFamily": "Inter",
-                  "fontSize": 80,
+                  "fontSize": 120,
                   "fontWeight": "700"
                 }
               ]
@@ -325,8 +131,8 @@
                 {
                   "type": "icon",
                   "id": "L0pg3",
-                  "width": 128,
-                  "height": 128,
+                  "width": 400,
+                  "height": 296,
                   "icon": "storefront",
                   "library": "Material Symbols Rounded",
                   "fill": "#0077B6"
@@ -338,7 +144,7 @@
                   "content": "登録確認",
                   "textAlign": "center",
                   "fontFamily": "Inter",
-                  "fontSize": 72,
+                  "fontSize": 120,
                   "fontWeight": "700"
                 }
               ]
@@ -361,8 +167,8 @@
                 {
                   "type": "icon",
                   "id": "uMlzW",
-                  "width": 128,
-                  "height": 128,
+                  "width": 459,
+                  "height": 315,
                   "icon": "map",
                   "library": "Material Symbols Rounded",
                   "fill": "#FF7043"
@@ -374,7 +180,7 @@
                   "content": "マップを見る",
                   "textAlign": "center",
                   "fontFamily": "Inter",
-                  "fontSize": 72,
+                  "fontSize": 120,
                   "fontWeight": "700"
                 }
               ]

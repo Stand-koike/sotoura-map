@@ -3996,7 +3996,9 @@ const UIModule = {
             kawaraBtn.style.display = 'none';
         }
 
-        document.getElementById('modal-text').innerText  = val(spot, 'detail') || val(spot, 'desc') || '';
+        const _descVal = val(spot, 'desc');
+        const _detailVal = val(spot, 'detail');
+        document.getElementById('modal-text').innerText = [_descVal, _detailVal].filter(Boolean).join('\n\n') || '';
         document.getElementById('btn-nav-text').innerText = t('go');
         document.getElementById('modal-nav-btn').href =
             `https://www.google.com/maps/dir/?api=1&destination=${spot.coords[1]},${spot.coords[0]}`;
