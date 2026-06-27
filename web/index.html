@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>外浦マップ</title>
 
     <!-- エリア設定: secrets → config → config.local（任意）。新エリアは config.js のみ編集 -->
@@ -984,11 +984,25 @@
             touch-action: pan-y;
         }
         @media (max-width: 767px) {
+            .modal-overlay {
+                height: 100vh;
+                height: 100dvh;
+                padding: 12px 8px;
+                padding-top: max(12px, env(safe-area-inset-top, 0px));
+                padding-bottom: max(12px, env(safe-area-inset-bottom, 0px));
+                box-sizing: border-box;
+            }
             .modal-content {
-                width: 96%; max-height: 90vh; border-radius: 16px;
+                width: 96%;
+                max-height: calc(100vh - 24px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+                max-height: calc(100dvh - 24px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+                border-radius: 16px;
             }
             .modal-slider { height: 200px; border-radius: 16px 16px 0 0; }
-            .modal-body { padding: 18px; }
+            .modal-body {
+                padding: 18px;
+                padding-bottom: calc(18px + env(safe-area-inset-bottom, 0px));
+            }
             .modal-title { font-size: 20px; }
         }
         @keyframes popIn { from { transform: scale(0.95); opacity: 0; } to { transform: scale(1); opacity: 1; } }
