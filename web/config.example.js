@@ -28,10 +28,10 @@
             URL: 5, IMAGE_URL_2: 6, IMAGE_URL_3: 7,
             DESC: 8, CAT: 9, HIDDEN: 10,
             STORE_ID: 11, RESERVED: 12, STATUS: 13,
-            NEWS: 14, DETAIL: 15, COUPON: 16,
+            NEWS: 14, LINK_URL: 15, COUPON: 16,
             ADDRESS: 17, PHONE: 18, TAGS: 19, HOURS: 20,
             NAME_EN: 21, DESC_EN: 22, CAT_EN: 23, STATUS_EN: 24,
-            NEWS_EN: 25, DETAIL_EN: 26, COUPON_EN: 27, ADDRESS_EN: 28, PHONE_EN: 29,
+            NEWS_EN: 25, LINK_URL_EN: 26, COUPON_EN: 27, ADDRESS_EN: 28, PHONE_EN: 29,
             TAGS_EN: 30, HOURS_EN: 31
         },
 
@@ -81,13 +81,15 @@
                 all: 'すべて', go: 'Google Mapsで見る', coupon: 'クーポンを使う',
                 loading: '読み込み中...', noData: 'データなし', filter: '絞り込み',
                 layers: 'レイヤー', newsListTitle: 'お知らせ一覧', updating: 'データ更新中...',
-                hours: '営業時間', tags: 'タグ', allTags: 'すべてのタグ', map: 'マップ'
+                hours: '営業時間', tags: 'タグ', allTags: 'すべてのタグ', map: 'マップ',
+                urlLink: '詳細を見る'
             },
             en: {
                 all: 'All', go: 'Open in Google Maps', coupon: 'Use Coupon',
                 loading: 'Loading...', noData: 'No Data', filter: 'Filter',
                 layers: 'Layers', newsListTitle: 'News List', updating: 'Updating...',
-                hours: 'Hours', tags: 'Tags', allTags: 'All Tags', map: 'Map'
+                hours: 'Hours', tags: 'Tags', allTags: 'All Tags', map: 'Map',
+                urlLink: 'View details'
             }
         }
     };

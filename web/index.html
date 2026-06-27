@@ -1009,6 +1009,14 @@
         .modal-contact-line a { color: var(--color-nav); text-decoration: none; word-break: break-all; }
         .modal-contact-line a:hover { text-decoration: underline; }
         .modal-text { font-size: 15px; line-height: 1.8; color: #555; white-space: pre-wrap; margin-bottom: 20px; }
+        .modal-url-wrap { margin: -8px 0 20px; }
+        .modal-url-link {
+            display: inline-flex; align-items: center; gap: 6px;
+            font-size: 14px; font-weight: 600; color: var(--color-nav);
+            text-decoration: none;
+        }
+        .modal-url-link:hover { text-decoration: underline; }
+        .modal-url-link i { font-size: 12px; }
         .btn-nav-large {
             display: block; width: 100%; background: white; border: 2px solid var(--color-nav);
             color: var(--color-nav); padding: 12px; border-radius: 12px; margin-bottom: 12px;
@@ -1522,6 +1530,12 @@
             </div>
             <div class="modal-live-post" id="modal-live-post" style="display:none;"></div>
             <div class="modal-text" id="modal-text"></div>
+            <p class="modal-url-wrap" id="modal-url-wrap" style="display:none;">
+                <a id="modal-url-link" class="modal-url-link" href="#" target="_blank" rel="noopener noreferrer">
+                    <i class="fas fa-external-link-alt" aria-hidden="true"></i>
+                    <span id="modal-url-label"></span>
+                </a>
+            </p>
             <a id="modal-nav-btn" class="btn-nav-large" target="_blank">
                 <i class="fas fa-location-arrow"></i> <span id="btn-nav-text">Google Mapsで見る</span>
             </a>
@@ -1837,6 +1851,13 @@ function escapeHtml(s) {
         .replace(/"/g, '&quot;');
 }
 
+function normalizeWebUrl(s) {
+    if (s == null || typeof s !== 'string') return '';
+    const t = s.trim();
+    if (!/^https?:\/\/.+/i.test(t)) return '';
+    return t;
+}
+
 // ================================================================
 // DataModule — Google Sheets 取得・パース・ポーリング
 //   列定義は config.js の COLS（エリアごとに変更可）
@@ -1897,7 +1918,7 @@ const DataModule = {
         const spots = DataModule._parse(json);
 
         const hash = spots.map(s =>
-            `${s.id}|${s.status}|${s.news}|${s.imageUrl || ''}|${s.imageUrl2 || ''}|${s.imageUrl3 || ''}|${s.address || ''}|${s.phone || ''}|${s.hours || ''}|${(s.tags || []).join('+')}`
+            `${s.id}|${s.status}|${s.news}|${s.url || ''}|${s.imageUrl || ''}|${s.imageUrl2 || ''}|${s.imageUrl3 || ''}|${s.address || ''}|${s.phone || ''}|${s.hours || ''}|${(s.tags || []).join('+')}`
         ).join(',');
         const loadingEl = document.getElementById('loading');
         const isInitialLoad = loadingEl && loadingEl.style.display !== 'none';
@@ -1972,14 +1993,14 @@ const DataModule = {
                 desc:       row.c[COLS.DESC]?.v    || '',
                 category:   row.c[COLS.CAT]?.v     || 'Others',
                 news:       row.c[COLS.NEWS]?.v    || '',
-                detail:     row.c[COLS.DETAIL]?.v  || '',
+                url:        row.c[COLS.LINK_URL]?.v  || '',
                 coupon:     row.c[COLS.COUPON]?.v  || '',
                 name_en:    row.c[COLS.NAME_EN]?.v   || name,
                 desc_en:    row.c[COLS.DESC_EN]?.v   || row.c[COLS.DESC]?.v   || '',
                 category_en:row.c[COLS.CAT_EN]?.v   || row.c[COLS.CAT]?.v    || 'Others',
                 status_en:  row.c[COLS.STATUS_EN]?.v != null ? String(row.c[COLS.STATUS_EN].v) : '',
                 news_en:    row.c[COLS.NEWS_EN]?.v   || '',
-                detail_en:  row.c[COLS.DETAIL_EN]?.v || row.c[COLS.DETAIL]?.v || '',
+                url_en:     row.c[COLS.LINK_URL_EN]?.v || row.c[COLS.LINK_URL]?.v || '',
                 coupon_en:  row.c[COLS.COUPON_EN]?.v || row.c[COLS.COUPON]?.v || '',
                 address,
                 address_en: addressEn,
@@ -3598,8 +3619,6 @@ const UIModule = {
             card.id = `card-${spot.id}`;
             card.onclick = () => App.selectSpot(spot);
 
-            const newsVal = val(spot, 'news');
-
             const thumbHtml = spot.imageUrl
                 ? `<img src="${spot.imageUrl}" class="card-thumb"
                     onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">`
@@ -3613,14 +3632,6 @@ const UIModule = {
             }
             const indicatorsHtml = indParts.length
                 ? `<div class="card-image-indicators">${indParts.join('')}</div>`
-                : '';
-
-            const detailLines = [];
-            if (newsVal) {
-                detailLines.push(`<div class="card-detail-line card-detail-news-text"><i class="fas fa-bullhorn"></i> ${newsVal}</div>`);
-            }
-            const detailHtml = detailLines.length
-                ? `<div class="card-detail-block">${detailLines.join('')}</div>`
                 : '';
 
             const statusText = getSpotStatusText(spot);
@@ -3652,7 +3663,6 @@ const UIModule = {
                     <div class="card-info-main">
                         <div class="card-title">${val(spot, 'name')}</div>
                         ${statusHtml}
-                        ${detailHtml}
                         ${tagsHtml}
                         ${kawaraBtnHtml}
                     </div>
@@ -3997,8 +4007,22 @@ const UIModule = {
         }
 
         const _descVal = val(spot, 'desc');
-        const _detailVal = val(spot, 'detail');
-        document.getElementById('modal-text').innerText = [_descVal, _detailVal].filter(Boolean).join('\n\n') || '';
+        const _newsVal = val(spot, 'news');
+        document.getElementById('modal-text').innerText = [_descVal, _newsVal].filter(Boolean).join('\n\n') || '';
+
+        const urlWrap = document.getElementById('modal-url-wrap');
+        const urlLink = document.getElementById('modal-url-link');
+        const urlNorm = normalizeWebUrl(val(spot, 'url'));
+        if (urlNorm && urlWrap && urlLink) {
+            urlWrap.style.display = 'block';
+            urlLink.href = urlNorm;
+            const labelEl = document.getElementById('modal-url-label');
+            if (labelEl) labelEl.textContent = t('urlLink');
+        } else if (urlWrap) {
+            urlWrap.style.display = 'none';
+            if (urlLink) urlLink.removeAttribute('href');
+        }
+
         document.getElementById('btn-nav-text').innerText = t('go');
         document.getElementById('modal-nav-btn').href =
             `https://www.google.com/maps/dir/?api=1&destination=${spot.coords[1]},${spot.coords[0]}`;
