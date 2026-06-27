@@ -146,7 +146,7 @@
                 layers: 'レイヤー', newsListTitle: 'お知らせ一覧', updating: 'データ更新中...',
                 hours: '営業時間', tags: 'タグ', allTags: 'すべてのタグ', map: 'マップ',
                 kawaraView: 'かわら版を見る', kawaraTitle: 'かわら版',
-                urlLink: '詳細を見る'
+                urlLink: '詳細を見る', descLabel: '説明', newsLabel: '補足'
             },
             en: {
                 all: 'All', go: 'Open in Google Maps', coupon: 'Use Coupon',
@@ -154,7 +154,7 @@
                 layers: 'Layers', newsListTitle: 'News List', updating: 'Updating...',
                 hours: 'Hours', tags: 'Tags', allTags: 'All Tags', map: 'Map',
                 kawaraView: 'View Kawara', kawaraTitle: 'Kawara Board',
-                urlLink: 'View details'
+                urlLink: 'View details', descLabel: 'About', newsLabel: 'Notes'
             }
         }
     };

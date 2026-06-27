@@ -998,12 +998,26 @@
                 max-height: calc(100dvh - 24px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
                 border-radius: 16px;
             }
-            .modal-slider { height: 200px; border-radius: 16px 16px 0 0; }
+            .modal-slider { height: 168px; border-radius: 16px 16px 0 0; }
             .modal-body {
-                padding: 18px;
-                padding-bottom: calc(18px + env(safe-area-inset-bottom, 0px));
+                padding: 12px 14px;
+                padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
             }
-            .modal-title { font-size: 20px; }
+            .modal-title { font-size: 20px; margin: 2px 0 6px; }
+            .modal-cat { margin-bottom: 0; }
+            .modal-contact { margin: 6px 0 8px; padding: 8px 10px; font-size: 13px; }
+            .modal-contact-line { margin: 3px 0; }
+            .modal-tags { margin: 2px 0 6px; }
+            .modal-hours { margin: 2px 0 4px; }
+            .modal-desc-block { margin: 0 0 6px; }
+            .modal-news-block { margin: 0 0 8px; padding: 8px 10px; }
+            .modal-desc-text, .modal-news-text { font-size: 13px; line-height: 1.5; }
+            .modal-section-label { margin-bottom: 2px; }
+            .modal-url-wrap { margin: 0 0 8px; }
+            .btn-nav-large { padding: 10px; margin-bottom: 8px; font-size: 14px; }
+            .btn-kawara-large { margin-bottom: 8px; padding: 10px; font-size: 14px; }
+            .btn-coupon-large { padding: 10px; font-size: 15px; }
+            #modal-status-wrap { margin: 2px 0 4px !important; }
         }
         @keyframes popIn { from { transform: scale(0.95); opacity: 0; } to { transform: scale(1); opacity: 1; } }
         .modal-header { position: relative; }
@@ -1013,17 +1027,32 @@
             font-size: 20px; cursor: pointer; display: flex; align-items: center; justify-content: center;
         }
         .modal-body { padding: 25px; }
-        .modal-title { font-size: 24px; font-weight: bold; margin: 10px 0; color: #333; }
-        .modal-hours { font-size: 13px; color: var(--color-text-sub); margin: 6px 0 10px; display: flex; align-items: center; gap: 6px; }
+        .modal-title { font-size: 24px; font-weight: bold; margin: 6px 0 8px; color: #333; }
+        .modal-cat { display: block; font-size: 12px; color: var(--color-text-sub); margin-bottom: 2px; }
+        .modal-hours { font-size: 13px; color: var(--color-text-sub); margin: 4px 0 6px; display: flex; align-items: center; gap: 6px; }
         .modal-hours i { color: var(--color-primary); }
-        .modal-tags { display: flex; flex-wrap: wrap; gap: 5px; margin: 8px 0 14px; }
-        .modal-contact { font-size: 14px; line-height: 1.7; color: #555; margin: 12px 0 16px; padding: 12px 14px; background: #f5f9f8; border-radius: 12px; border-left: 4px solid var(--color-primary); }
-        .modal-contact-line { margin: 6px 0; display: flex; align-items: flex-start; gap: 8px; }
+        .modal-tags { display: flex; flex-wrap: wrap; gap: 5px; margin: 4px 0 8px; }
+        .modal-contact { font-size: 14px; line-height: 1.55; color: #555; margin: 8px 0 10px; padding: 10px 12px; background: #f5f9f8; border-radius: 12px; border-left: 4px solid var(--color-primary); }
+        .modal-contact-line { margin: 4px 0; display: flex; align-items: flex-start; gap: 8px; }
         .modal-contact-line i { color: var(--color-primary); margin-top: 3px; flex-shrink: 0; }
         .modal-contact-line a { color: var(--color-nav); text-decoration: none; word-break: break-all; }
         .modal-contact-line a:hover { text-decoration: underline; }
-        .modal-text { font-size: 15px; line-height: 1.8; color: #555; white-space: pre-wrap; margin-bottom: 20px; }
-        .modal-url-wrap { margin: -8px 0 20px; }
+        .modal-desc-block { margin: 0 0 8px; }
+        .modal-news-block {
+            margin: 0 0 10px; padding: 10px 12px;
+            background: #FFF8E1; border-radius: 10px;
+            border-left: 3px solid #FF9800;
+        }
+        .modal-section-label {
+            font-size: 10px; font-weight: bold; letter-spacing: 0.4px;
+            color: var(--color-text-sub); margin-bottom: 3px;
+        }
+        .modal-news-label { color: #E65100; }
+        .modal-news-label i { margin-right: 4px; font-size: 9px; }
+        .modal-desc-text, .modal-news-text {
+            font-size: 14px; line-height: 1.55; color: #555; white-space: pre-wrap;
+        }
+        .modal-url-wrap { margin: 0 0 10px; }
         .modal-url-link {
             display: inline-flex; align-items: center; gap: 6px;
             font-size: 14px; font-weight: 600; color: var(--color-nav);
@@ -1522,7 +1551,7 @@
             </button>
         </div>
         <div class="modal-body">
-            <span id="modal-cat" style="font-size:12px; color:var(--color-text-sub);"></span>
+            <span class="modal-cat" id="modal-cat"></span>
             <h2 class="modal-title" id="modal-title"></h2>
             <div id="modal-status-wrap" style="display:none; margin: 4px 0 8px;">
                 <span id="modal-status" class="card-status card-status--compact"></span>
@@ -1543,7 +1572,14 @@
                 </p>
             </div>
             <div class="modal-live-post" id="modal-live-post" style="display:none;"></div>
-            <div class="modal-text" id="modal-text"></div>
+            <div class="modal-desc-block" id="modal-desc-wrap" style="display:none;">
+                <div class="modal-section-label" id="modal-desc-label"></div>
+                <div class="modal-desc-text" id="modal-desc"></div>
+            </div>
+            <div class="modal-news-block" id="modal-news-wrap" style="display:none;">
+                <div class="modal-section-label modal-news-label" id="modal-news-label"></div>
+                <div class="modal-news-text" id="modal-news"></div>
+            </div>
             <p class="modal-url-wrap" id="modal-url-wrap" style="display:none;">
                 <a id="modal-url-link" class="modal-url-link" href="#" target="_blank" rel="noopener noreferrer">
                     <i class="fas fa-external-link-alt" aria-hidden="true"></i>
@@ -4022,7 +4058,28 @@ const UIModule = {
 
         const _descVal = val(spot, 'desc');
         const _newsVal = val(spot, 'news');
-        document.getElementById('modal-text').innerText = [_descVal, _newsVal].filter(Boolean).join('\n\n') || '';
+        const descWrap = document.getElementById('modal-desc-wrap');
+        const newsWrap = document.getElementById('modal-news-wrap');
+        const descEl = document.getElementById('modal-desc');
+        const newsEl = document.getElementById('modal-news');
+        if (_descVal && descWrap && descEl) {
+            descWrap.style.display = 'block';
+            const descLabel = document.getElementById('modal-desc-label');
+            if (descLabel) descLabel.textContent = t('descLabel');
+            descEl.textContent = _descVal;
+        } else if (descWrap) {
+            descWrap.style.display = 'none';
+            if (descEl) descEl.textContent = '';
+        }
+        if (_newsVal && newsWrap && newsEl) {
+            newsWrap.style.display = 'block';
+            const newsLabel = document.getElementById('modal-news-label');
+            if (newsLabel) newsLabel.textContent = t('newsLabel');
+            newsEl.textContent = _newsVal;
+        } else if (newsWrap) {
+            newsWrap.style.display = 'none';
+            if (newsEl) newsEl.textContent = '';
+        }
 
         const urlWrap = document.getElementById('modal-url-wrap');
         const urlLink = document.getElementById('modal-url-link');

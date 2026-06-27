@@ -82,14 +82,14 @@
                 loading: '読み込み中...', noData: 'データなし', filter: '絞り込み',
                 layers: 'レイヤー', newsListTitle: 'お知らせ一覧', updating: 'データ更新中...',
                 hours: '営業時間', tags: 'タグ', allTags: 'すべてのタグ', map: 'マップ',
-                urlLink: '詳細を見る'
+                urlLink: '詳細を見る', descLabel: '説明', newsLabel: '補足'
             },
             en: {
                 all: 'All', go: 'Open in Google Maps', coupon: 'Use Coupon',
                 loading: 'Loading...', noData: 'No Data', filter: 'Filter',
                 layers: 'Layers', newsListTitle: 'News List', updating: 'Updating...',
                 hours: 'Hours', tags: 'Tags', allTags: 'All Tags', map: 'Map',
-                urlLink: 'View details'
+                urlLink: 'View details', descLabel: 'About', newsLabel: 'Notes'
             }
         }
     };
