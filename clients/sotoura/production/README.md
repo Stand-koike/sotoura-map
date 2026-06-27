@@ -81,8 +81,8 @@ production/
 | L | 11 | store_id | `STORE_ID` | LINE 投稿紐付け用 |
 | M | 12 | reserved | `RESERVED` | |
 | N | 13 | status | `STATUS` | |
-| O | 14 | news | `NEWS` | |
-| P | 15 | detail | `DETAIL` | |
+| O | 14 | news | `NEWS` | モーダル内テキスト補足 |
+| P | 15 | url | `LINK_URL` | `https://` で始まる外部リンク |
 | Q | 16 | coupon | `COUPON` | |
 | R | 17 | address | `ADDRESS` | |
 | S | 18 | phone | `PHONE` | |
@@ -93,7 +93,7 @@ production/
 | X | 23 | category_en | `CAT_EN` | |
 | Y | 24 | status_en | `STATUS_EN` | 英語表示時の status |
 | Z | 25 | news_en | `NEWS_EN` | |
-| AA | 26 | detail_en | `DETAIL_EN` | |
+| AA | 26 | url_en | `LINK_URL_EN` | |
 | AB | 27 | coupon_en | `COUPON_EN` | |
 | AC | 28 | address_en | `ADDRESS_EN` | |
 | AD | 29 | phone_en | `PHONE_EN` | |

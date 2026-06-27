@@ -53,8 +53,8 @@ const SETUP_SOURCE = {
 /** docs/samples/spreadsheet-headers.csv と同一（31 列・A=_reserved …） */
 const MASTER_HEADERS = [
   '_reserved', 'name', 'lat', 'lng', 'emoji', 'image_url', 'desc', 'category', 'hidden',
-  'store_id', 'reserved', 'status', 'news', 'detail', 'coupon',
-  'name_en', 'desc_en', 'category_en', 'news_en', 'detail_en', 'coupon_en',
+  'store_id', 'reserved', 'status', 'news', 'url', 'coupon',
+  'name_en', 'desc_en', 'category_en', 'news_en', 'url_en', 'coupon_en',
   'address', 'address_en', 'phone', 'phone_en', 'tags', 'tags_en', 'hours', 'hours_en',
   'image_url_2', 'image_url_3'
 ];
@@ -208,7 +208,7 @@ function buildDummyMasterRows_() {
       '', 'デモ和菓子屋', 34.6758, 138.9412, '🍡', '',
       '下田MAP動作確認用ダミー', 'グルメ', '', 'demo-001', '',
       '混', '本日開店中のダミー告知', 'テキスト詳細（ダミー）', '',
-      'Demo Wagashi', 'Dummy desc', 'Food', 'Dummy news', 'Dummy detail', '',
+      'Demo Wagashi', 'Dummy desc', 'Food', 'Dummy news', 'https://example.com', '',
       '静岡県下田市（ダミー）', 'Shimoda demo', '0558-000-0000', '0558-000-0000',
       '#デモ, #テスト', '#demo', '10:00〜17:00', '10:00–17:00', '', ''
     ]),
