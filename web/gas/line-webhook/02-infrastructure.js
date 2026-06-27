@@ -270,3 +270,10 @@ function buildMsgLineLinkedOk_(storeId) {
     '1行目=タイトル(' + LINE_LIMITS.MAX_TITLE_LENGTH + '字)、2行目以降=本文(' + LINE_LIMITS.MAX_MESSAGE_LENGTH + '字)'
   );
 }
+
+function buildRichMenuExampleMessage_() {
+  return (
+    '本日のおすすめ（タイトル' + LINE_LIMITS.MAX_TITLE_LENGTH + '字以内）\n' +
+    '（ここに本文）（本文' + LINE_LIMITS.MAX_MESSAGE_LENGTH + '字以内）'
+  );
+}

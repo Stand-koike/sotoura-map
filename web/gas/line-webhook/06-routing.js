@@ -104,6 +104,10 @@ function dispatchWebhookMessage_(event) {
 }
 
 function tryHandleGlobalTextCommand_(userId, replyToken, text) {
+  if (text === MSG.RICH_MENU_EXAMPLE_CMD) {
+    replyText(replyToken, buildRichMenuExampleMessage_());
+    return true;
+  }
   if (text === MSG.RICH_GUEST_ONBOARDING_CMD || text === MSG.RICH_GUEST_ONBOARDING) {
     var u = getUserRecord_(userId);
     replyText(replyToken, isActiveUser_(u) ? buildHelpMessage_(userId) : MSG.RICH_GUEST_ONBOARDING);

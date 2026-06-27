@@ -94,7 +94,8 @@ const MSG = {
     '③「紐づけました」と返信が来たら完了\n\n' +
     '以降はテキスト→写真でかわら版を投稿できます。\n' +
     '位置情報は不要です。',
-  RICH_GUEST_ONBOARDING_CMD: '登録の流れ'
+  RICH_GUEST_ONBOARDING_CMD: '登録の流れ',
+  RICH_MENU_EXAMPLE_CMD: '例文'
 };
 
 // --- シートヘッダースタイル ---

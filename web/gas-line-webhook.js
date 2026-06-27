@@ -112,7 +112,8 @@ const MSG = {
     '③「紐づけました」と返信が来たら完了\n\n' +
     '以降はテキスト→写真でかわら版を投稿できます。\n' +
     '位置情報は不要です。',
-  RICH_GUEST_ONBOARDING_CMD: '登録の流れ'
+  RICH_GUEST_ONBOARDING_CMD: '登録の流れ',
+  RICH_MENU_EXAMPLE_CMD: '例文'
 };
 
 // --- シートヘッダースタイル ---
@@ -395,6 +396,13 @@ function buildMsgLineLinkedOk_(storeId) {
     '✅ 「' + storeId + '」として紐づけました\n\n' +
     'このあと、テキスト → 📸写真 の順で投稿できます。\n' +
     '1行目=タイトル(' + LINE_LIMITS.MAX_TITLE_LENGTH + '字)、2行目以降=本文(' + LINE_LIMITS.MAX_MESSAGE_LENGTH + '字)'
+  );
+}
+
+function buildRichMenuExampleMessage_() {
+  return (
+    '本日のおすすめ（タイトル' + LINE_LIMITS.MAX_TITLE_LENGTH + '字以内）\n' +
+    '（ここに本文）（本文' + LINE_LIMITS.MAX_MESSAGE_LENGTH + '字以内）'
   );
 }
 
@@ -1233,6 +1241,10 @@ function dispatchWebhookMessage_(event) {
 }
 
 function tryHandleGlobalTextCommand_(userId, replyToken, text) {
+  if (text === MSG.RICH_MENU_EXAMPLE_CMD) {
+    replyText(replyToken, buildRichMenuExampleMessage_());
+    return true;
+  }
   if (text === MSG.RICH_GUEST_ONBOARDING_CMD || text === MSG.RICH_GUEST_ONBOARDING) {
     var u = getUserRecord_(userId);
     replyText(replyToken, isActiveUser_(u) ? buildHelpMessage_(userId) : MSG.RICH_GUEST_ONBOARDING);
