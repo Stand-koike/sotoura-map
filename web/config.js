@@ -84,8 +84,14 @@
             /** 起動時の表示中心（海岸・ビーチ中央）とズーム */
             initCenter: [138.97244739182608, 34.675168669479824],
             initZoom:  16.7,
+            /** スマホのみ: 起動時ズーム（小さいほど引き） */
+            initZoomMobile: 16.0,
+            /** スマホのみ: 起動時中心（bearing -90: 画面右=lat+, 画面下=lng+） */
+            initCenterMobile: [138.9733, 34.6752],
             /** fit 算出後の下限（これ未満にはズームアウト不可） */
             minZoom:   16.2,
+            /** スマホのみ: ズームアウト下限 */
+            minZoomMobile: 15.9,
             maxZoom:   19,
             initUseFitBounds: false,
             /**
@@ -107,6 +113,8 @@
             /** fitBounds オフセット px（y 負＝画面下・海側へ） */
             seaFitOffsetX: 0,
             seaFitOffsetY: -70,
+            /** スマホのみ: 起動時オフセット px（seaFitOffset 同様: y 負＝画面下・海側） */
+            initViewOffsetMobile: [-40, -130],
             maxBounds: [[138.9424860, 34.6508949], [138.9923643, 34.7003523]],
             bearing:   -90,
             pitch:     45

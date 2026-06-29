@@ -2698,6 +2698,46 @@ const MapModule = {
         return base + (Number.isFinite(buf) ? buf : 0);
     },
 
+    _resolveInitZoom(cfg) {
+        cfg = cfg || CONFIG.MAP_IMAGE || {};
+        const base = Number(cfg.initZoom);
+        const fallback = Number.isFinite(base) && base > 0 ? base : 16;
+        if (State.isPC) return fallback;
+        const mobile = Number(cfg.initZoomMobile);
+        return Number.isFinite(mobile) && mobile > 0 ? mobile : fallback;
+    },
+
+    _resolveMinZoomFloor(cfg) {
+        cfg = cfg || CONFIG.MAP_IMAGE || {};
+        const pick = (v) => (Number.isFinite(v) && v > 0 ? v : null);
+        if (State.isPC) return pick(Number(cfg.minZoom));
+        return pick(Number(cfg.minZoomMobile)) ?? pick(Number(cfg.minZoom));
+    },
+
+    _resolveInitCenter(cfg) {
+        cfg = cfg || CONFIG.MAP_IMAGE || {};
+        const fallback = (Array.isArray(cfg.initCenter) && cfg.initCenter.length >= 2)
+            ? cfg.initCenter
+            : cfg.center;
+        if (State.isPC) return fallback;
+        const mobile = cfg.initCenterMobile;
+        if (Array.isArray(mobile) && mobile.length >= 2) {
+            return [Number(mobile[0]), Number(mobile[1])];
+        }
+        return fallback;
+    },
+
+    _resolveInitViewOffset(cfg) {
+        cfg = cfg || CONFIG.MAP_IMAGE || {};
+        if (!State.isPC) {
+            const o = cfg.initViewOffsetMobile;
+            if (Array.isArray(o) && o.length >= 2) {
+                return [Number(o[0]) || 0, Number(o[1]) || 0];
+            }
+        }
+        return this._initViewOffset();
+    },
+
     /** maxBounds・回転禁止・ピッチ固定。recalcMinZoom=true のときだけ minZoom を fit 再計算 */
     _applyMapConstraints(opts = {}) {
         const map = this._map;
@@ -2770,9 +2810,9 @@ const MapModule = {
         });
         if (!camera) return;
         const fitMinZ = camera.zoom + this._minZoomTighten();
-        const floorMinZ = Number(cfg.minZoom);
-        const initZ = Number(cfg.initZoom);
-        let minZ = Number.isFinite(floorMinZ) && floorMinZ > 0
+        const floorMinZ = this._resolveMinZoomFloor(cfg);
+        const initZ = this._resolveInitZoom(cfg);
+        let minZ = floorMinZ != null
             ? Math.max(fitMinZ, floorMinZ)
             : fitMinZ;
         /* initZoom から大きく離れないよう上限（ズームアウト過多を防止） */
@@ -2802,16 +2842,15 @@ const MapModule = {
         const cam = this._cameraLock();
         const minZ = this._map.getMinZoom();
 
-        const center = (Array.isArray(cfg.initCenter) && cfg.initCenter.length >= 2)
-            ? cfg.initCenter
-            : cfg.center;
-        const zoom = Math.max(Number(cfg.initZoom) || 16, minZ);
+        const center = this._resolveInitCenter(cfg);
+        const zoom = Math.max(this._resolveInitZoom(cfg), minZ);
+        const offset = this._resolveInitViewOffset(cfg);
         const duration = opts.duration != null ? opts.duration : 0;
 
         if (duration > 0) {
-            this._map.easeTo({ center, zoom, bearing: cam.bearing, pitch: cam.pitch, duration });
+            this._map.easeTo({ center, zoom, bearing: cam.bearing, pitch: cam.pitch, offset, duration });
         } else {
-            this._map.jumpTo({ center, zoom, bearing: cam.bearing, pitch: cam.pitch });
+            this._map.jumpTo({ center, zoom, bearing: cam.bearing, pitch: cam.pitch, offset });
         }
     },
 
@@ -2860,7 +2899,8 @@ const MapModule = {
             return;
         }
         mapboxgl.accessToken = token;
-        const { center, initZoom, minZoom, maxZoom, bearing = -90, pitch = 45 } = CONFIG.MAP_IMAGE;
+        const { center, minZoom, maxZoom, bearing = -90, pitch = 45 } = CONFIG.MAP_IMAGE;
+        const initZoom = this._resolveInitZoom(CONFIG.MAP_IMAGE);
 
         this._lockedBearing = Number.isFinite(Number(bearing)) ? Number(bearing) : -90;
         this._lockedPitch = Number.isFinite(Number(pitch)) ? Number(pitch) : 45;
