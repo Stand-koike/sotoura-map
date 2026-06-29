@@ -1013,7 +1013,6 @@
             .modal-news-block { margin: 0 0 8px; padding: 8px 10px; }
             .modal-desc-text, .modal-news-text { font-size: 13px; line-height: 1.5; }
             .modal-section-label { margin-bottom: 2px; }
-            .modal-url-wrap { margin: 0 0 8px; }
             .btn-nav-large { padding: 10px; margin-bottom: 8px; font-size: 14px; }
             .btn-kawara-large { margin-bottom: 8px; padding: 10px; font-size: 14px; }
             .btn-coupon-large { padding: 10px; font-size: 15px; }
@@ -1052,14 +1051,7 @@
         .modal-desc-text, .modal-news-text {
             font-size: 14px; line-height: 1.55; color: #555; white-space: pre-wrap;
         }
-        .modal-url-wrap { margin: 0 0 10px; }
-        .modal-url-link {
-            display: inline-flex; align-items: center; gap: 6px;
-            font-size: 14px; font-weight: 600; color: var(--color-nav);
-            text-decoration: none;
-        }
-        .modal-url-link:hover { text-decoration: underline; }
-        .modal-url-link i { font-size: 12px; }
+        #modal-url-link { font-weight: 600; }
         .btn-nav-large {
             display: block; width: 100%; background: white; border: 2px solid var(--color-nav);
             color: var(--color-nav); padding: 12px; border-radius: 12px; margin-bottom: 12px;
@@ -1412,7 +1404,7 @@
         }
     </style>
 </head>
-<body>
+<body class="cards-sheet-collapsed">
 
 <div id="loading">
     <i class="fas fa-water fa-spin"></i> Loading...
@@ -1497,8 +1489,8 @@
 <div class="card-panel-container">
     <div class="card-panel-mobile-inner">
         <button type="button" class="card-panel-handle" id="card-panel-handle"
-            aria-expanded="true" aria-controls="slide-panel"
-            aria-label="店舗カードを隠す"
+            aria-expanded="false" aria-controls="slide-panel"
+            aria-label="店舗一覧を表示"
             onclick="event.stopPropagation(); UIModule.toggleCardsSheet();">
             <span class="card-panel-handle-pill" aria-hidden="true"></span>
             <i class="fas fa-chevron-down" aria-hidden="true"></i>
@@ -1570,6 +1562,12 @@
                     <i class="fas fa-phone"></i>
                     <a id="modal-phone-link" href="#"></a>
                 </p>
+                <p class="modal-contact-line" id="modal-url-wrap" style="display:none;">
+                    <i class="fas fa-globe" aria-hidden="true"></i>
+                    <a id="modal-url-link" href="#" target="_blank" rel="noopener noreferrer">
+                        <span id="modal-url-label"></span>
+                    </a>
+                </p>
             </div>
             <div class="modal-live-post" id="modal-live-post" style="display:none;"></div>
             <div class="modal-desc-block" id="modal-desc-wrap" style="display:none;">
@@ -1580,12 +1578,6 @@
                 <div class="modal-section-label modal-news-label" id="modal-news-label"></div>
                 <div class="modal-news-text" id="modal-news"></div>
             </div>
-            <p class="modal-url-wrap" id="modal-url-wrap" style="display:none;">
-                <a id="modal-url-link" class="modal-url-link" href="#" target="_blank" rel="noopener noreferrer">
-                    <i class="fas fa-external-link-alt" aria-hidden="true"></i>
-                    <span id="modal-url-label"></span>
-                </a>
-            </p>
             <a id="modal-nav-btn" class="btn-nav-large" target="_blank">
                 <i class="fas fa-location-arrow"></i> <span id="btn-nav-text">Google Mapsで見る</span>
             </a>
@@ -4054,15 +4046,13 @@ const UIModule = {
 
         const addrText = val(spot, 'address');
         const phoneText = val(spot, 'phone');
+        const urlNorm = normalizeWebUrl(val(spot, 'url'));
         const contactEl = document.getElementById('modal-contact');
         const addrWrap = document.getElementById('modal-address-wrap');
         const phoneWrap = document.getElementById('modal-phone-wrap');
         const phoneLink = document.getElementById('modal-phone-link');
-        if (addrText || phoneText) {
-            contactEl.style.display = 'block';
-        } else {
-            contactEl.style.display = 'none';
-        }
+        const urlWrap = document.getElementById('modal-url-wrap');
+        const urlLink = document.getElementById('modal-url-link');
         if (addrText) {
             addrWrap.style.display = 'flex';
             document.getElementById('modal-address').textContent = addrText;
@@ -4083,6 +4073,16 @@ const UIModule = {
         } else {
             phoneWrap.style.display = 'none';
         }
+        if (urlNorm && urlWrap && urlLink) {
+            urlWrap.style.display = 'flex';
+            urlLink.href = urlNorm;
+            const labelEl = document.getElementById('modal-url-label');
+            if (labelEl) labelEl.textContent = t('urlLink');
+        } else if (urlWrap) {
+            urlWrap.style.display = 'none';
+            if (urlLink) urlLink.removeAttribute('href');
+        }
+        contactEl.style.display = (addrText || phoneText || urlNorm) ? 'block' : 'none';
         // かわら版は専用モーダルで表示（詳細モーダルには出さない）
         const livePostEl = document.getElementById('modal-live-post');
         livePostEl.style.display = 'none';
@@ -4121,19 +4121,6 @@ const UIModule = {
         } else if (newsWrap) {
             newsWrap.style.display = 'none';
             if (newsEl) newsEl.textContent = '';
-        }
-
-        const urlWrap = document.getElementById('modal-url-wrap');
-        const urlLink = document.getElementById('modal-url-link');
-        const urlNorm = normalizeWebUrl(val(spot, 'url'));
-        if (urlNorm && urlWrap && urlLink) {
-            urlWrap.style.display = 'block';
-            urlLink.href = urlNorm;
-            const labelEl = document.getElementById('modal-url-label');
-            if (labelEl) labelEl.textContent = t('urlLink');
-        } else if (urlWrap) {
-            urlWrap.style.display = 'none';
-            if (urlLink) urlLink.removeAttribute('href');
         }
 
         document.getElementById('btn-nav-text').innerText = t('go');
@@ -4330,6 +4317,14 @@ const App = {
         // ?refresh=1 パラメータで強制再取得 (AppSheet Webhook から呼び出し可能)
         if (new URLSearchParams(location.search).get('refresh') === '1') {
             State.lastDataHash = '';
+        }
+        if (State.isPC) {
+            document.body.classList.remove('cards-sheet-collapsed');
+            const btn = document.getElementById('card-panel-handle');
+            if (btn) {
+                btn.setAttribute('aria-expanded', 'true');
+                btn.setAttribute('aria-label', '店舗カードを隠す');
+            }
         }
         MapModule.init();
 
