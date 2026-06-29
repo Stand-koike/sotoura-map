@@ -4370,6 +4370,10 @@ const App = {
      * store_id が一致するスポットを強調表示する（flyTo＋マーカー active＋カード）。
      * store_id は selectSpot 既存ロジックを再利用するだけなので追加の描画処理は不要。
      * 初回データ確定後の1回だけ実行（ポーリング再取得での再発火を防ぐ）。
+     *
+     * 注意: データ取得(DataModule.fetch)と初期カメラ確定(_finalizeInitView)は
+     * onMapReady で並走する。先に flyTo すると後から _finalizeInitView が
+     * カメラを初期位置へ戻してしまうため、_initViewApplied を待ってから強調する。
      */
     _handleDeepLink() {
         if (this._deepLinkHandled) return;
@@ -4379,7 +4383,21 @@ const App = {
         const key = normalizeStoreId_(raw);
         if (!key) return;
         const spot = State.allSpots.find(s => s.storeId && s.storeId === key);
-        if (spot) this.selectSpot(spot);
+        if (!spot) return;
+
+        const focus = () => this.selectSpot(spot);
+        if (MapModule._initViewApplied) {
+            focus();
+            return;
+        }
+        // 初期カメラ確定をポーリングで待つ（load タイムアウト 8s に余裕を持たせ最大 ~10s）。
+        let tries = 0;
+        const timer = setInterval(() => {
+            if (MapModule._initViewApplied || ++tries > 200) {
+                clearInterval(timer);
+                focus();
+            }
+        }, 50);
     },
 
     _refreshUI() {
