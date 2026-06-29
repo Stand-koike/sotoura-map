@@ -4360,6 +4360,26 @@ const App = {
         // posts データを店舗スポットへマージ
         PostsModule._attachLiveToSpots();
         this._refreshUI();
+        // マーカー描画後に外部サイトからのディープリンク（?spot=store_id）を処理。
+        this._handleDeepLink();
+    },
+
+    /**
+     * 外部サイト（WordPress 名鑑カード「マップで見る」）からの遷移時に
+     * URL の ?spot=<store_id> を読み、同一スプレッドシート店舗マスタの
+     * store_id が一致するスポットを強調表示する（flyTo＋マーカー active＋カード）。
+     * store_id は selectSpot 既存ロジックを再利用するだけなので追加の描画処理は不要。
+     * 初回データ確定後の1回だけ実行（ポーリング再取得での再発火を防ぐ）。
+     */
+    _handleDeepLink() {
+        if (this._deepLinkHandled) return;
+        this._deepLinkHandled = true;
+        const raw = new URLSearchParams(location.search).get('spot');
+        if (!raw) return;
+        const key = normalizeStoreId_(raw);
+        if (!key) return;
+        const spot = State.allSpots.find(s => s.storeId && s.storeId === key);
+        if (spot) this.selectSpot(spot);
     },
 
     _refreshUI() {
