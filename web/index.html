@@ -4360,6 +4360,46 @@ const App = {
         // posts データを店舗スポットへマージ
         PostsModule._attachLiveToSpots();
         this._refreshUI();
+        // マーカー描画後に外部サイトからのディープリンク（?spot=store_id）を処理。
+        this._handleDeepLink();
+    },
+
+    /**
+     * 外部サイト（WordPress 名鑑カード「マップで見る」）からの遷移時に
+     * URL の ?spot=<store_id> を読み、同一スプレッドシート店舗マスタの
+     * store_id が一致するスポットを強調表示する（flyTo＋マーカー active＋カード）。
+     * store_id は selectSpot 既存ロジックを再利用するだけなので追加の描画処理は不要。
+     * 店舗が見つかった時点で1回だけ実行する。初回が電波不良・読み込み不良で店舗データが
+     * 未着のときはフラグを立てず、次のデータ取得（ポーリング再取得）で再試行する。
+     *
+     * 注意: データ取得(DataModule.fetch)と初期カメラ確定(_finalizeInitView)は
+     * onMapReady で並走する。先に flyTo すると後から _finalizeInitView が
+     * カメラを初期位置へ戻してしまうため、_initViewApplied を待ってから強調する。
+     */
+    _handleDeepLink() {
+        if (this._deepLinkHandled) return;
+        const raw = new URLSearchParams(location.search).get('spot');
+        if (!raw) { this._deepLinkHandled = true; return; }   // ?spot= 無し → 以後の再試行は不要
+        const key = normalizeStoreId_(raw);
+        if (!key) { this._deepLinkHandled = true; return; }
+        const spot = State.allSpots.find(s => s.storeId && s.storeId === key);
+        // データ未着で未発見のときはフラグを立てず、次のデータ取得（ポーリング）で再試行させる。
+        if (!spot) return;
+        this._deepLinkHandled = true;
+
+        const focus = () => this.selectSpot(spot);
+        if (MapModule._initViewApplied) {
+            focus();
+            return;
+        }
+        // 初期カメラ確定をポーリングで待つ（load タイムアウト 8s に余裕を持たせ最大 ~10s）。
+        let tries = 0;
+        const timer = setInterval(() => {
+            if (MapModule._initViewApplied || ++tries > 200) {
+                clearInterval(timer);
+                focus();
+            }
+        }, 50);
     },
 
     _refreshUI() {
