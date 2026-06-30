@@ -4369,7 +4369,8 @@ const App = {
      * URL の ?spot=<store_id> を読み、同一スプレッドシート店舗マスタの
      * store_id が一致するスポットを強調表示する（flyTo＋マーカー active＋カード）。
      * store_id は selectSpot 既存ロジックを再利用するだけなので追加の描画処理は不要。
-     * 初回データ確定後の1回だけ実行（ポーリング再取得での再発火を防ぐ）。
+     * 店舗が見つかった時点で1回だけ実行する。初回が電波不良・読み込み不良で店舗データが
+     * 未着のときはフラグを立てず、次のデータ取得（ポーリング再取得）で再試行する。
      *
      * 注意: データ取得(DataModule.fetch)と初期カメラ確定(_finalizeInitView)は
      * onMapReady で並走する。先に flyTo すると後から _finalizeInitView が
@@ -4377,13 +4378,14 @@ const App = {
      */
     _handleDeepLink() {
         if (this._deepLinkHandled) return;
-        this._deepLinkHandled = true;
         const raw = new URLSearchParams(location.search).get('spot');
-        if (!raw) return;
+        if (!raw) { this._deepLinkHandled = true; return; }   // ?spot= 無し → 以後の再試行は不要
         const key = normalizeStoreId_(raw);
-        if (!key) return;
+        if (!key) { this._deepLinkHandled = true; return; }
         const spot = State.allSpots.find(s => s.storeId && s.storeId === key);
+        // データ未着で未発見のときはフラグを立てず、次のデータ取得（ポーリング）で再試行させる。
         if (!spot) return;
+        this._deepLinkHandled = true;
 
         const focus = () => this.selectSpot(spot);
         if (MapModule._initViewApplied) {
