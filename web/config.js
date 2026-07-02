@@ -21,7 +21,7 @@
         APP_TITLE: '外浦マップ',
 
         /** GA4 測定 ID（下田と同値・外浦専用は後日） */
-        GA_MEASUREMENT_ID: 'G-XW0F1B5T6E',
+        GA_MEASUREMENT_ID: 'G-THWHYH7799',
 
         MAPBOX_TOKEN: secrets.MAPBOX_TOKEN || 'pk.YOUR_MAPBOX_TOKEN',
         SHEET_ID:     secrets.SHEET_ID     || 'YOUR_GOOGLE_SHEET_ID',
