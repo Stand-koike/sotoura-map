@@ -122,6 +122,16 @@
 
         POLL_INTERVAL: 30000,
 
+        /** 固定マスタ（トイレ・駐車場・ビュースポット・バス停等） */
+        FIXED_MASTER_SHEET: '固定マスタ',
+        FIXED_PIN_ICONS: {
+            'トイレ':         'toilet.png',
+            '駐車場':         'parking.png',
+            'ビュースポット': 'viewspot.png',
+            'バス停':         'busstop.png'
+        },
+        FIXED_PIN_SIZE: 40,
+
         /** LINE 連携契約（line-contract.js）。列定義・シート名の正 */
         LINE: lineContract,
 

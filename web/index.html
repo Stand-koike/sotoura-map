@@ -373,6 +373,27 @@
             .marker-emoji { font-size: 20px !important; }
         }
         .custom-marker.active { z-index: 100; }
+        /* 固定マスタ（トイレ・駐車場等）— フロートなし・PNG ピン */
+        .custom-marker--fixed {
+            width: auto;
+            height: auto;
+            cursor: pointer;
+            z-index: 8;
+            animation: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.35));
+            transition: transform 0.2s ease;
+        }
+        .custom-marker--fixed img {
+            display: block;
+            pointer-events: none;
+        }
+        .custom-marker--fixed.active {
+            z-index: 90;
+            transform: scale(1.15);
+        }
         .marker-inner {
             width: 100%; height: 100%; background: #fff; border-radius: 50%;
             border: 3px solid var(--color-primary);
@@ -1689,7 +1710,11 @@ const State = {
     liveStandalonePosts: [],     // 運営スポット / GPS（独立マーカー）
     liveMarkers:           [],
     livePostPollInterval:  null,
-    tickerList:            []
+    tickerList:            [],
+    fixedSpots:            [],
+    fixedMarkers:          [],
+    lastFixedDataHash:     '',
+    fixedPollInterval:     null
 };
 
 // ================================================================
@@ -2078,6 +2103,87 @@ window._gvizCb = function(json) {
 };
 
 // ================================================================
+// FixedModule — 固定マスタ（トイレ・駐車場等）取得・ポーリング
+// ================================================================
+const FixedModule = {
+
+    _fetchTimeout: null,
+    _retryCount: 0,
+    _maxRetries: 3,
+
+    fetch() {
+        this._retryCount = 0;
+        this._doFetch();
+    },
+
+    _doFetch() {
+        const sheetName = CONFIG.FIXED_MASTER_SHEET;
+        if (!sheetName || !CONFIG.SHEET_ID) return;
+
+        const cbName = '_gvizFixedCb';
+        const oldScript = document.getElementById('gviz-fixed-script');
+        if (oldScript) oldScript.remove();
+
+        clearTimeout(this._fetchTimeout);
+        this._fetchTimeout = setTimeout(() => {
+            console.warn('[FixedModule] タイムアウト - リトライ', this._retryCount + 1);
+            if (this._retryCount < this._maxRetries) {
+                this._retryCount++;
+                this._doFetch();
+            }
+        }, 12000);
+
+        const sheetParam = encodeURIComponent(sheetName);
+        const script = document.createElement('script');
+        script.id = 'gviz-fixed-script';
+        script.src = `https://docs.google.com/spreadsheets/d/${CONFIG.SHEET_ID}/gviz/tq?tqx=responseHandler:${cbName}&sheet=${sheetParam}&_=${Date.now()}`;
+        script.onerror = () => {
+            console.warn('[FixedModule] スクリプト読み込み失敗');
+            clearTimeout(this._fetchTimeout);
+            if (this._retryCount < this._maxRetries) {
+                this._retryCount++;
+                setTimeout(() => this._doFetch(), 2000 * this._retryCount);
+            }
+        };
+        document.body.appendChild(script);
+    },
+
+    onLoaded(json) {
+        clearTimeout(this._fetchTimeout);
+        const spots = this._parse(json);
+
+        const hash = spots.map(s =>
+            `${s.id}|${s.status}|${s.name}|${s.category}|${s.coords.join(',')}`
+        ).join(',');
+        if (hash === State.lastFixedDataHash) return;
+        State.lastFixedDataHash = hash;
+        State.fixedSpots = spots;
+        App._onFixedDataReady();
+    },
+
+    _parse(json) {
+        return DataModule._parse(json).map((spot, i) => ({
+            ...spot,
+            id: spot.storeId
+                ? `fixed_spot_${spot.storeId.replace(/\s+/g, '_')}`
+                : `fixed_spot_${i}`,
+            isFixed: true
+        }));
+    },
+
+    startPolling() {
+        if (!CONFIG.POLL_INTERVAL) return;
+        clearInterval(State.fixedPollInterval);
+        State.fixedPollInterval = setInterval(() => FixedModule.fetch(), CONFIG.POLL_INTERVAL);
+    }
+};
+
+window._gvizFixedCb = function(json) {
+    clearTimeout(FixedModule._fetchTimeout);
+    FixedModule.onLoaded(json);
+};
+
+// ================================================================
 // PostsModule — LIVE投稿（posts シート）取得・ピン統合・ポーリング
 // ================================================================
 const PostsModule = {
@@ -2263,6 +2369,14 @@ const LayerManager = {
             visible: true,
             type:    'markers'
         },
+        fixed: {
+            name:    '設備・スポット',
+            name_en: 'Facilities',
+            icon:    '🗺️',
+            color:   '#5C6BC0',
+            visible: true,
+            type:    'markers'
+        },
     },
 
     // マップロード後に初期化
@@ -2290,15 +2404,16 @@ const LayerManager = {
         def.visible = !def.visible;
 
         if (def.type === 'markers') {
-            State.activeMarkers.forEach(m => {
+            const markers = id === 'fixed' ? State.fixedMarkers : State.activeMarkers;
+            markers.forEach(m => {
                 m.getElement().style.display = def.visible ? '' : 'none';
             });
-            if (CONFIG.ENABLE_STANDALONE_LIVE_PINS) {
+            if (id === 'spots' && CONFIG.ENABLE_STANDALONE_LIVE_PINS) {
                 State.liveMarkers.forEach(m => {
                     m.getElement().style.display = def.visible ? '' : 'none';
                 });
             }
-            if (def.visible) UIModule.syncMarkerDisplay();
+            if (id === 'spots' && def.visible) UIModule.syncMarkerDisplay();
         } else {
             const layerId = `${id}-layer`;
             if (this._map?.getLayer(layerId)) {
@@ -2939,6 +3054,8 @@ const MapModule = {
             }
             DataModule.fetch();
             DataModule.startPolling();
+            FixedModule.fetch();
+            FixedModule.startPolling();
             this._startGPS();
 
             Promise.resolve(this._addIllustrationMap())
@@ -3619,6 +3736,48 @@ const UIModule = {
         State.activeMarkers.push(marker);
     },
 
+    _appendFixedHtmlMarker(spot, spotsVisible) {
+        const icons = CONFIG.FIXED_PIN_ICONS || {};
+        const iconFile = icons[spot.category] || null;
+        const el = document.createElement('div');
+        el.className = 'custom-marker custom-marker--fixed';
+        el.id = `marker-${spot.id}`;
+        if (!spotsVisible) el.style.display = 'none';
+
+        const size = CONFIG.FIXED_PIN_SIZE || 30;
+        if (iconFile) {
+            const img = document.createElement('img');
+            img.src = `assets/fixed-pins/${iconFile}`;
+            img.alt = '';
+            img.style.cssText = `width:${size}px;height:${size}px;object-fit:contain;`;
+            img.onerror = () => {
+                img.style.display = 'none';
+                const fallback = document.createElement('span');
+                fallback.style.fontSize = `${Math.round(size * 0.7)}px`;
+                fallback.textContent = spot.emoji || '📍';
+                el.appendChild(fallback);
+            };
+            el.appendChild(img);
+        } else {
+            const fallback = document.createElement('span');
+            fallback.style.fontSize = `${Math.round(size * 0.7)}px`;
+            fallback.textContent = spot.emoji || '📍';
+            el.appendChild(fallback);
+        }
+
+        el.addEventListener('click', e => {
+            e.stopPropagation();
+            document.querySelectorAll('.custom-marker').forEach(m => m.classList.remove('active'));
+            el.classList.add('active');
+            UIModule.openModal(spot.id);
+        });
+
+        const marker = new mapboxgl.Marker({ element: el, anchor: 'center' })
+            .setLngLat(spot.coords)
+            .addTo(MapModule._map);
+        State.fixedMarkers.push(marker);
+    },
+
     /** 将来: 観光客 GPS 投稿などの独立ピン（CONFIG.ENABLE_STANDALONE_LIVE_PINS） */
     _appendStandaloneLiveMarkers(spotsVisible) {
         (State.liveStandalonePosts || []).forEach(lp => {
@@ -3998,7 +4157,8 @@ const UIModule = {
     // ---- 詳細モーダル ----
 
     openModal(spotId) {
-        const spot = State.allSpots.find(s => s.id === spotId);
+        const spot = State.allSpots.find(s => s.id === spotId)
+            || State.fixedSpots.find(s => s.id === spotId);
         if (!spot) return;
         State.currentSpot = spot;
 
@@ -4337,6 +4497,15 @@ const App = {
                 if (retryEl) retryEl.style.display = 'block';
             }
         }, 50000);
+    },
+
+    // 固定マスタ取得完了後のマーカー描画
+    _onFixedDataReady() {
+        if (!MapModule._map) return;
+        State.fixedMarkers.forEach(m => m.remove());
+        State.fixedMarkers = [];
+        const fixedVisible = LayerManager.getDefs().fixed?.visible !== false;
+        State.fixedSpots.forEach(spot => UIModule._appendFixedHtmlMarker(spot, fixedVisible));
     },
 
     // データ取得完了後のメイン処理
