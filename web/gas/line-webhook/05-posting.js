@@ -9,29 +9,17 @@ function pendingWaitMinutes_() {
 function replyPendingTextAck_(replyToken, preview) {
   replyText(replyToken,
     '📝 受け付けました「' + preview + '」\n' +
-    '【順番: テキスト→写真】続けて📸写真を送ってください（' + pendingWaitMinutes_() + '分以内）\n' +
-    '写真不要ならそのまま待つと自動でマップに反映されます。');
-}
-
-function replyPendingImageAck_(replyToken, hasExistingImage) {
-  var verb = hasExistingImage ? '更新' : '受け付け';
-  replyText(replyToken,
-    '📸 写真を' + verb + 'しました。（順番: テキスト→写真）' +
-    'テキストを送るとセットで反映されます（' + pendingWaitMinutes_() + '分以内）\n' +
-    'テキスト不要ならそのまま待つと自動でマップに反映されます。');
+    '【順番: テキスト→📸写真】続けて📸写真を送ってください（' + pendingWaitMinutes_() + '分以内）\n' +
+    '📸写真は必須です。');
 }
 
 function handleStoreContentText_(userId, replyToken, user, text) {
   deleteSession_(userId);
-  var rawText    = text.substring(0, LINE_LIMITS.MAX_TITLE_LENGTH + 1 + LINE_LIMITS.MAX_MESSAGE_LENGTH);
-  var pendingImg = loadPending_(userId);
+  var rawText = text.substring(0, LINE_LIMITS.MAX_TITLE_LENGTH + 1 + LINE_LIMITS.MAX_MESSAGE_LENGTH);
+  var pending = loadPending_(userId);
 
-  if (pendingImg && pendingImg.imageUrl) {
-    deletePending_(userId);
-    proceedToFinalizePost_(userId, replyToken, user, {
-      text: rawText, imageUrl: pendingImg.imageUrl,
-      lat: null, lng: null, spotId: '', spotName: ''
-    });
+  if (pending && String(pending.message || '').trim()) {
+    replyText(replyToken, MSG.STORE_DUPLICATE_TEXT);
     return;
   }
 
@@ -46,6 +34,12 @@ function handleContributorContentText_(userId, replyToken, user, text) {
       '協力者の投稿は📍位置が先です。\n【順番】📍位置情報 → 短文テキスト → 📸写真');
     return;
   }
+  var pending = loadPending_(userId);
+  if (pending && String(pending.message || '').trim()) {
+    replyText(replyToken,
+      '⚠️ すでにテキストを受け取り済みです。\n【順番: テキスト→📸写真】続けて📸写真を送ってください。');
+    return;
+  }
   var truncated = text.substring(0, LINE_LIMITS.MAX_MESSAGE_LENGTH).trim();
   if (!truncated) {
     replyText(replyToken, '先に内容のある短文（1文字以上）を送ってから、写真を送ってください。');
@@ -53,13 +47,17 @@ function handleContributorContentText_(userId, replyToken, user, text) {
   }
   savePending_(userId, '_liv_', truncated);
   replyText(replyToken,
-    '📝 受け付けました「' + truncated + '」\n【順番: テキスト→写真】続けて📸写真を送ってください（' +
-    pendingWaitMinutes_() + '分以内）');
+    '📝 受け付けました「' + truncated + '」\n【順番: テキスト→📸写真】続けて📸写真を送ってください（' +
+    pendingWaitMinutes_() + '分以内）\n📸写真は必須です。');
 }
 
 function mergeImageWithPendingThenFinalize_(userId, replyToken, user, imageUrl) {
   var pending = loadPendingWithGrace_(userId);
   var text    = pending ? String(pending.message || '') : '';
+  if (!text.trim()) {
+    if (replyToken !== 'PUSH') replyText(replyToken, MSG.STORE_TEXT_BEFORE_PHOTO);
+    return;
+  }
   var sess    = getSession_(userId);
   var useGps  = user.role === ROLE_CONTRIBUTOR && sess.payload.lat != null && sess.payload.lng != null;
   proceedToFinalizePost_(userId, replyToken, user, {
@@ -98,6 +96,13 @@ function resolveContributorPostCoords_(user, lat, lng) {
   };
 }
 
+function rejectPostMissingPhoto_(userId, replyToken) {
+  deleteSession_(userId);
+  deletePending_(userId);
+  if (replyToken === 'PUSH') pushText(userId, MSG.STORE_PHOTO_REQUIRED);
+  else replyText(replyToken, MSG.STORE_PHOTO_REQUIRED);
+}
+
 function finalizePost_(userId, replyToken, user) {
   if (user.role !== ROLE_STORE && user.role !== ROLE_CONTRIBUTOR) {
     if (replyToken !== 'PUSH') replyText(replyToken, MSG.LEGACY_ROLE);
@@ -116,11 +121,20 @@ function finalizePost_(userId, replyToken, user) {
 
   var p     = sess.payload;
   var split = splitTitleAndBody_(p.text || '');
-  if (!split.title && !split.body && !p.imageUrl) {
+
+  if (!String(p.imageUrl || '').trim()) {
+    rejectPostMissingPhoto_(userId, replyToken);
+    return;
+  }
+
+  if (!split.title && !split.body) {
     if (replyToken !== 'PUSH') {
-      replyText(replyToken, 'タイトル・本文か画像がありません。最初から送り直してください。');
+      replyText(replyToken, '⚠️ テキストがありません。【順番: テキスト→📸写真】最初から送り直してください。');
+    } else {
+      pushText(userId, '⚠️ テキストがありません。【順番: テキスト→📸写真】最初から送り直してください。');
     }
     deleteSession_(userId);
+    deletePending_(userId);
     return;
   }
 
@@ -134,7 +148,7 @@ function finalizePost_(userId, replyToken, user) {
     return;
   }
 
-  appendPostRow_({
+  var saveResult = upsertPostRow_({
     postId:     Utilities.getUuid(),
     userId:     userId,
     role:       user.role,
@@ -152,7 +166,9 @@ function finalizePost_(userId, replyToken, user) {
   deleteSession_(userId);
   deletePending_(userId);
 
-  var doneMsg = '✅ マップに反映しました！' + (p.spotName ? '\n場所:' + p.spotName : '');
+  var doneMsg = saveResult.updated
+    ? '✅ マップを更新しました！' + (p.spotName ? '\n場所:' + p.spotName : '')
+    : '✅ マップに反映しました！' + (p.spotName ? '\n場所:' + p.spotName : '');
   if (replyToken === 'PUSH') pushText(userId, doneMsg);
   else replyText(replyToken, doneMsg);
 }
@@ -164,27 +180,41 @@ function handleContributorImage_(userId, replyToken, user, messageId) {
       '位置情報付きの投稿は【順番: 短文テキスト→📸写真】です。\n短文を先に送ってから写真を送ってください。');
     return;
   }
+  var imageUrl;
   try {
-    mergeImageWithPendingThenFinalize_(userId, replyToken, user, fetchLineImageToDrive_(messageId));
+    imageUrl = fetchLineImageToDrive_(messageId);
   } catch (err) {
-    replyText(replyToken, '⚠️ 画像取得に失敗しました。');
+    webhookExecErr_('[handleContributorImage_] fetch ' + String(err.message || err));
+    replyText(replyToken, '⚠️ 画像取得に失敗しました。\n' + String(err.message || err));
+    return;
+  }
+  try {
+    mergeImageWithPendingThenFinalize_(userId, replyToken, user, imageUrl);
+  } catch (err) {
+    webhookExecErr_('[handleContributorImage_] finalize ' + String(err.message || err));
+    replyText(replyToken, '⚠️ 投稿の保存に失敗しました。もう一度お試しください。');
   }
 }
 
 function handleStoreImageIncoming_(userId, replyToken, user, messageId) {
+  var pending = loadPending_(userId);
+  if (!pending || !String(pending.message || '').trim()) {
+    replyText(replyToken, MSG.STORE_TEXT_BEFORE_PHOTO);
+    return;
+  }
+  var imageUrl;
   try {
-    var imageUrl = fetchLineImageToDrive_(messageId);
-    var pending  = loadPending_(userId);
-    if (pending && pending.message) {
-      mergeImageWithPendingThenFinalize_(userId, replyToken, user, imageUrl);
-      return;
-    }
-    var hadImage = !!(pending && pending.imageUrl);
-    savePending_(userId, user.fixedStoreId || '', '', imageUrl);
-    replyPendingImageAck_(replyToken, hadImage);
+    imageUrl = fetchLineImageToDrive_(messageId);
   } catch (err) {
-    webhookExecErr_('[handleStoreImageIncoming_] ' + String(err.message || err));
-    replyText(replyToken, '⚠️ 画像の取得に失敗しました。もう一度お試しください。');
+    webhookExecErr_('[handleStoreImageIncoming_] fetch ' + String(err.message || err));
+    replyText(replyToken, '⚠️ 画像の取得に失敗しました。\n' + String(err.message || err));
+    return;
+  }
+  try {
+    mergeImageWithPendingThenFinalize_(userId, replyToken, user, imageUrl);
+  } catch (err) {
+    webhookExecErr_('[handleStoreImageIncoming_] finalize ' + String(err.message || err));
+    replyText(replyToken, '⚠️ 投稿の保存に失敗しました。もう一度お試しください。');
   }
 }
 
@@ -192,6 +222,10 @@ function contributorHasGpsSession_(userId) {
   var sess = getSession_(userId);
   return sess.step === STEP_AWAITING_CONTENT &&
     sess.payload.lat != null && sess.payload.lng != null;
+}
+
+function notifyPendingExpired_(userId, replyToken) {
+  if (replyToken === 'PUSH') pushText(userId, MSG.STORE_PENDING_EXPIRED);
 }
 
 // --- pending のタイマーフラッシュ ---
@@ -220,17 +254,21 @@ function flushExpiredPending_(excludeUserId) {
     var message  = data[i][2] ? String(data[i][2]) : '';
     var imageUrl = data[i][4] ? String(data[i][4]) : '';
     sheet.deleteRow(i + 1);
-    if (!message.trim() && !imageUrl) continue;
 
     var user = getUserRecord_(userId);
     if (!isActiveUser_(user)) continue;
     if (user.role !== ROLE_STORE && user.role !== ROLE_CONTRIBUTOR) continue;
 
-    var sess = getSession_(userId);
-    if (user.role === ROLE_CONTRIBUTOR &&
-        sess.payload.lat != null && sess.payload.lng != null &&
-        !message.trim() && imageUrl) continue;
+    var hasText  = !!message.trim();
+    var hasImage = !!String(imageUrl || '').trim();
+    if (!hasText && !hasImage) continue;
 
+    if (!hasText || !hasImage) {
+      notifyPendingExpired_(userId, 'PUSH');
+      continue;
+    }
+
+    var sess = getSession_(userId);
     proceedToFinalizePost_(userId, 'PUSH', user, buildFlushPayload_(user, sess, message, imageUrl));
   }
 }

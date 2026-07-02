@@ -48,19 +48,57 @@ function saveStoreCoordsToMaster_(storeId, lat, lng) {
 
 // --- posts ---
 
-function appendPostRow_(row) {
+function buildPostSheetValues_(row) {
+  return [
+    row.postId, row.userId, row.role, row.sourceType,
+    row.title || '', row.text || '', row.imageUrl || '',
+    row.lat, row.lng, row.storeId, row.createdAt,
+    row.isVisible === false ? false : true
+  ];
+}
+
+function findFixedPostRowByStoreId_(data, storeId) {
+  var sidWant = normalizeStoreKeyForWebhook_(storeId);
+  if (!sidWant) return -1;
+  var C = LINE_POSTS_COL;
+  var matchRow = -1;
+  for (var i = 1; i < data.length; i++) {
+    var st = data[i][C.SOURCE_TYPE];
+    if (st !== SOURCE_FIXED) continue;
+    var sid = data[i][C.STORE_ID];
+    if (sid == null || normalizeStoreKeyForWebhook_(sid) !== sidWant) continue;
+    matchRow = i + 1;
+  }
+  return matchRow;
+}
+
+function upsertPostRow_(row) {
   var ss    = getWebhookSpreadsheetCached_();
   var sheet = ss.getSheetByName(LINE_SHEETS.POSTS);
   if (!sheet) {
     ensurePostsSheet_(ss);
     sheet = ss.getSheetByName(LINE_SHEETS.POSTS);
   }
-  sheet.appendRow([
-    row.postId, row.userId, row.role, row.sourceType,
-    row.title || '', row.text || '', row.imageUrl || '',
-    row.lat, row.lng, row.storeId, row.createdAt,
-    row.isVisible === false ? false : true
-  ]);
+  var values = buildPostSheetValues_(row);
+
+  if (row.sourceType === SOURCE_FIXED && row.storeId) {
+    var data     = sheet.getDataRange().getValues();
+    var sheetRow = findFixedPostRowByStoreId_(data, row.storeId);
+    if (sheetRow > 0) {
+      var C = LINE_POSTS_COL;
+      var existingPostId = data[sheetRow - 1][C.POST_ID];
+      if (existingPostId) values[0] = existingPostId;
+      sheet.getRange(sheetRow, 1, 1, values.length).setValues([values]);
+      return { updated: true, postId: values[0] };
+    }
+  }
+
+  sheet.appendRow(values);
+  return { updated: false, postId: row.postId };
+}
+
+function appendPostRow_(row) {
+  upsertPostRow_(row);
 }
 
 function ensurePostsSheet_(ss) {

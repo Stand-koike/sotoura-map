@@ -266,7 +266,7 @@ function replyIfNotRegistered_(userId, replyToken, user) {
 function buildMsgLineLinkedOk_(storeId) {
   return (
     '✅ 「' + storeId + '」として紐づけました\n\n' +
-    'このあと、テキスト → 📸写真 の順で投稿できます。\n' +
+    'このあと、【順番: テキスト→📸写真】で投稿できます（📸写真は必須）。\n' +
     '1行目=タイトル(' + LINE_LIMITS.MAX_TITLE_LENGTH + '字)、2行目以降=本文(' + LINE_LIMITS.MAX_MESSAGE_LENGTH + '字)'
   );
 }

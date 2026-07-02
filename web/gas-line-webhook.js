@@ -103,14 +103,18 @@ const INVITE_CODE_PREFIX_RE_ = /^(?:紐づけ|はじめます|リンク)[\s\u300
 const MSG = {
   LEGACY_ROLE: '⚠️ このロールは現在ご利用いただけません。「登録解除」後、運営から招待コードを受け取って再度紐づけしてください。',
   HELP_INVITE: '・初回: 運営から受け取った招待コードを1通で送る（例: FUMA7K）\n・「紐づけ FUMA7K」でも可\n\n',
-  STORE_LOCATION_REJECTED: '店舗の投稿はお店の固定位置を使います。\n📍位置情報は不要です。テキスト→📸写真の順で送ってください。',
+  STORE_LOCATION_REJECTED: '店舗の投稿はお店の固定位置を使います。\n📍位置情報は不要です。\n【順番: テキスト→📸写真】📸写真は必須です。',
+  STORE_TEXT_BEFORE_PHOTO: '⚠️ 写真の前にテキストを送ってください。\n【順番: テキスト→📸写真】1行目=タイトル、2行目以降=本文',
+  STORE_DUPLICATE_TEXT: '⚠️ すでにテキストを受け取り済みです。\n【順番: テキスト→📸写真】続けて📸写真を送ってください。\nやり直す場合はしばらく待つとリセットされます。',
+  STORE_PHOTO_REQUIRED: '⚠️ 📸写真は必須です。テキスト→📸写真の順でもう一度送り直してください。',
+  STORE_PENDING_EXPIRED: '⏰ 投稿がタイムアウトしました。\n【順番: テキスト→📸写真】最初からもう一度送り直してください。（📸写真は必須）',
   OLD_REGISTER_REDIRECT: '店舗のセルフ登録は廃止しました。\n運営から受け取った招待コードを1通で送ってください。\n（例: FUMA7K）',
   RICH_GUEST_ONBOARDING:
     '【登録の流れ】\n' +
     '① 運営から招待コードを受け取る\n' +
     '② このトークにコードを1通送る（例: DEMO01）\n' +
     '③「紐づけました」と返信が来たら完了\n\n' +
-    '以降はテキスト→写真でかわら版を投稿できます。\n' +
+    '以降は【順番: テキスト→📸写真】でかわら版を投稿できます（📸写真は必須）。\n' +
     '位置情報は不要です。',
   RICH_GUEST_ONBOARDING_CMD: '登録の流れ',
   RICH_MENU_EXAMPLE_CMD: '例文'
@@ -394,7 +398,7 @@ function replyIfNotRegistered_(userId, replyToken, user) {
 function buildMsgLineLinkedOk_(storeId) {
   return (
     '✅ 「' + storeId + '」として紐づけました\n\n' +
-    'このあと、テキスト → 📸写真 の順で投稿できます。\n' +
+    'このあと、【順番: テキスト→📸写真】で投稿できます（📸写真は必須）。\n' +
     '1行目=タイトル(' + LINE_LIMITS.MAX_TITLE_LENGTH + '字)、2行目以降=本文(' + LINE_LIMITS.MAX_MESSAGE_LENGTH + '字)'
   );
 }
@@ -456,19 +460,57 @@ function saveStoreCoordsToMaster_(storeId, lat, lng) {
 
 // --- posts ---
 
-function appendPostRow_(row) {
+function buildPostSheetValues_(row) {
+  return [
+    row.postId, row.userId, row.role, row.sourceType,
+    row.title || '', row.text || '', row.imageUrl || '',
+    row.lat, row.lng, row.storeId, row.createdAt,
+    row.isVisible === false ? false : true
+  ];
+}
+
+function findFixedPostRowByStoreId_(data, storeId) {
+  var sidWant = normalizeStoreKeyForWebhook_(storeId);
+  if (!sidWant) return -1;
+  var C = LINE_POSTS_COL;
+  var matchRow = -1;
+  for (var i = 1; i < data.length; i++) {
+    var st = data[i][C.SOURCE_TYPE];
+    if (st !== SOURCE_FIXED) continue;
+    var sid = data[i][C.STORE_ID];
+    if (sid == null || normalizeStoreKeyForWebhook_(sid) !== sidWant) continue;
+    matchRow = i + 1;
+  }
+  return matchRow;
+}
+
+function upsertPostRow_(row) {
   var ss    = getWebhookSpreadsheetCached_();
   var sheet = ss.getSheetByName(LINE_SHEETS.POSTS);
   if (!sheet) {
     ensurePostsSheet_(ss);
     sheet = ss.getSheetByName(LINE_SHEETS.POSTS);
   }
-  sheet.appendRow([
-    row.postId, row.userId, row.role, row.sourceType,
-    row.title || '', row.text || '', row.imageUrl || '',
-    row.lat, row.lng, row.storeId, row.createdAt,
-    row.isVisible === false ? false : true
-  ]);
+  var values = buildPostSheetValues_(row);
+
+  if (row.sourceType === SOURCE_FIXED && row.storeId) {
+    var data     = sheet.getDataRange().getValues();
+    var sheetRow = findFixedPostRowByStoreId_(data, row.storeId);
+    if (sheetRow > 0) {
+      var C = LINE_POSTS_COL;
+      var existingPostId = data[sheetRow - 1][C.POST_ID];
+      if (existingPostId) values[0] = existingPostId;
+      sheet.getRange(sheetRow, 1, 1, values.length).setValues([values]);
+      return { updated: true, postId: values[0] };
+    }
+  }
+
+  sheet.appendRow(values);
+  return { updated: false, postId: row.postId };
+}
+
+function appendPostRow_(row) {
+  upsertPostRow_(row);
 }
 
 function ensurePostsSheet_(ss) {
@@ -875,26 +917,61 @@ function pushText(userId, text) {
   });
 }
 
+function guessImageExtFromContentType_(contentType) {
+  var ct = String(contentType || '').toLowerCase();
+  if (ct.indexOf('png') >= 0) return 'png';
+  if (ct.indexOf('gif') >= 0) return 'gif';
+  if (ct.indexOf('webp') >= 0) return 'webp';
+  if (ct.indexOf('heic') >= 0 || ct.indexOf('heif') >= 0) return 'heic';
+  return 'jpg';
+}
+
+function getOrCreateLineImageFolder_() {
+  var folders = DriveApp.getFoldersByName(DRIVE_FOLDER_NAME);
+  return folders.hasNext() ? folders.next() : DriveApp.createFolder(DRIVE_FOLDER_NAME);
+}
+
+function shareLineImageFile_(file) {
+  try {
+    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  } catch (shareErr) {
+    webhookExecErr_('[shareLineImageFile_] ' + String(shareErr.message || shareErr));
+  }
+}
+
 function fetchLineImageToDrive_(messageId) {
+  var mid = String(messageId || '').trim();
+  if (!mid) throw new Error('messageId が空です');
+
+  var token = getWebhookLineToken_();
+  if (!token) throw new Error('LINE_CHANNEL_ACCESS_TOKEN が未設定です');
+
   var response = UrlFetchApp.fetch(
-    'https://api-data.line.me/v2/bot/message/' + messageId + '/content',
+    'https://api-data.line.me/v2/bot/message/' + encodeURIComponent(mid) + '/content',
     {
       method: 'GET',
       headers: lineAuthHeaders_(),
       muteHttpExceptions: true
     }
   );
-  if (response.getResponseCode() !== 200) {
-    throw new Error('HTTP ' + response.getResponseCode());
+  var code = response.getResponseCode();
+  if (code !== 200) {
+    var body = response.getContentText().slice(0, 300);
+    webhookExecErr_('[fetchLineImageToDrive_] http=' + code + ' messageId=' + mid + ' body=' + body);
+    if (code === 401) throw new Error('LINE トークンが無効です（401）');
+    if (code === 404) throw new Error('画像の有効期限切れです。もう一度送り直してください（404）');
+    throw new Error('LINE 画像 API エラー HTTP ' + code);
   }
+
   var blob = response.getBlob();
-  if (blob.getBytes().length > LINE_LIMITS.MAX_IMAGE_SIZE_BYTES) {
-    throw new Error('サイズ上限超過');
-  }
-  var folders = DriveApp.getFoldersByName(DRIVE_FOLDER_NAME);
-  var folder  = folders.hasNext() ? folders.next() : DriveApp.createFolder(DRIVE_FOLDER_NAME);
-  var file    = folder.createFile(blob.setName('line_' + messageId + '_' + Date.now() + '.jpg'));
-  file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  var bytes = blob.getBytes();
+  if (!bytes || !bytes.length) throw new Error('画像データが空です');
+  if (bytes.length > LINE_LIMITS.MAX_IMAGE_SIZE_BYTES) throw new Error('サイズ上限超過');
+
+  var ext    = guessImageExtFromContentType_(blob.getContentType());
+  var folder = getOrCreateLineImageFolder_();
+  var file   = folder.createFile(blob.setName('line_' + mid + '_' + Date.now() + '.' + ext));
+  shareLineImageFile_(file);
   return 'https://drive.google.com/thumbnail?id=' + file.getId() + '&sz=w800';
 }
 
@@ -909,29 +986,17 @@ function pendingWaitMinutes_() {
 function replyPendingTextAck_(replyToken, preview) {
   replyText(replyToken,
     '📝 受け付けました「' + preview + '」\n' +
-    '【順番: テキスト→写真】続けて📸写真を送ってください（' + pendingWaitMinutes_() + '分以内）\n' +
-    '写真不要ならそのまま待つと自動でマップに反映されます。');
-}
-
-function replyPendingImageAck_(replyToken, hasExistingImage) {
-  var verb = hasExistingImage ? '更新' : '受け付け';
-  replyText(replyToken,
-    '📸 写真を' + verb + 'しました。（順番: テキスト→写真）' +
-    'テキストを送るとセットで反映されます（' + pendingWaitMinutes_() + '分以内）\n' +
-    'テキスト不要ならそのまま待つと自動でマップに反映されます。');
+    '【順番: テキスト→📸写真】続けて📸写真を送ってください（' + pendingWaitMinutes_() + '分以内）\n' +
+    '📸写真は必須です。');
 }
 
 function handleStoreContentText_(userId, replyToken, user, text) {
   deleteSession_(userId);
-  var rawText    = text.substring(0, LINE_LIMITS.MAX_TITLE_LENGTH + 1 + LINE_LIMITS.MAX_MESSAGE_LENGTH);
-  var pendingImg = loadPending_(userId);
+  var rawText = text.substring(0, LINE_LIMITS.MAX_TITLE_LENGTH + 1 + LINE_LIMITS.MAX_MESSAGE_LENGTH);
+  var pending = loadPending_(userId);
 
-  if (pendingImg && pendingImg.imageUrl) {
-    deletePending_(userId);
-    proceedToFinalizePost_(userId, replyToken, user, {
-      text: rawText, imageUrl: pendingImg.imageUrl,
-      lat: null, lng: null, spotId: '', spotName: ''
-    });
+  if (pending && String(pending.message || '').trim()) {
+    replyText(replyToken, MSG.STORE_DUPLICATE_TEXT);
     return;
   }
 
@@ -946,6 +1011,12 @@ function handleContributorContentText_(userId, replyToken, user, text) {
       '協力者の投稿は📍位置が先です。\n【順番】📍位置情報 → 短文テキスト → 📸写真');
     return;
   }
+  var pending = loadPending_(userId);
+  if (pending && String(pending.message || '').trim()) {
+    replyText(replyToken,
+      '⚠️ すでにテキストを受け取り済みです。\n【順番: テキスト→📸写真】続けて📸写真を送ってください。');
+    return;
+  }
   var truncated = text.substring(0, LINE_LIMITS.MAX_MESSAGE_LENGTH).trim();
   if (!truncated) {
     replyText(replyToken, '先に内容のある短文（1文字以上）を送ってから、写真を送ってください。');
@@ -953,13 +1024,17 @@ function handleContributorContentText_(userId, replyToken, user, text) {
   }
   savePending_(userId, '_liv_', truncated);
   replyText(replyToken,
-    '📝 受け付けました「' + truncated + '」\n【順番: テキスト→写真】続けて📸写真を送ってください（' +
-    pendingWaitMinutes_() + '分以内）');
+    '📝 受け付けました「' + truncated + '」\n【順番: テキスト→📸写真】続けて📸写真を送ってください（' +
+    pendingWaitMinutes_() + '分以内）\n📸写真は必須です。');
 }
 
 function mergeImageWithPendingThenFinalize_(userId, replyToken, user, imageUrl) {
   var pending = loadPendingWithGrace_(userId);
   var text    = pending ? String(pending.message || '') : '';
+  if (!text.trim()) {
+    if (replyToken !== 'PUSH') replyText(replyToken, MSG.STORE_TEXT_BEFORE_PHOTO);
+    return;
+  }
   var sess    = getSession_(userId);
   var useGps  = user.role === ROLE_CONTRIBUTOR && sess.payload.lat != null && sess.payload.lng != null;
   proceedToFinalizePost_(userId, replyToken, user, {
@@ -998,6 +1073,13 @@ function resolveContributorPostCoords_(user, lat, lng) {
   };
 }
 
+function rejectPostMissingPhoto_(userId, replyToken) {
+  deleteSession_(userId);
+  deletePending_(userId);
+  if (replyToken === 'PUSH') pushText(userId, MSG.STORE_PHOTO_REQUIRED);
+  else replyText(replyToken, MSG.STORE_PHOTO_REQUIRED);
+}
+
 function finalizePost_(userId, replyToken, user) {
   if (user.role !== ROLE_STORE && user.role !== ROLE_CONTRIBUTOR) {
     if (replyToken !== 'PUSH') replyText(replyToken, MSG.LEGACY_ROLE);
@@ -1016,11 +1098,20 @@ function finalizePost_(userId, replyToken, user) {
 
   var p     = sess.payload;
   var split = splitTitleAndBody_(p.text || '');
-  if (!split.title && !split.body && !p.imageUrl) {
+
+  if (!String(p.imageUrl || '').trim()) {
+    rejectPostMissingPhoto_(userId, replyToken);
+    return;
+  }
+
+  if (!split.title && !split.body) {
     if (replyToken !== 'PUSH') {
-      replyText(replyToken, 'タイトル・本文か画像がありません。最初から送り直してください。');
+      replyText(replyToken, '⚠️ テキストがありません。【順番: テキスト→📸写真】最初から送り直してください。');
+    } else {
+      pushText(userId, '⚠️ テキストがありません。【順番: テキスト→📸写真】最初から送り直してください。');
     }
     deleteSession_(userId);
+    deletePending_(userId);
     return;
   }
 
@@ -1034,7 +1125,7 @@ function finalizePost_(userId, replyToken, user) {
     return;
   }
 
-  appendPostRow_({
+  var saveResult = upsertPostRow_({
     postId:     Utilities.getUuid(),
     userId:     userId,
     role:       user.role,
@@ -1052,7 +1143,9 @@ function finalizePost_(userId, replyToken, user) {
   deleteSession_(userId);
   deletePending_(userId);
 
-  var doneMsg = '✅ マップに反映しました！' + (p.spotName ? '\n場所:' + p.spotName : '');
+  var doneMsg = saveResult.updated
+    ? '✅ マップを更新しました！' + (p.spotName ? '\n場所:' + p.spotName : '')
+    : '✅ マップに反映しました！' + (p.spotName ? '\n場所:' + p.spotName : '');
   if (replyToken === 'PUSH') pushText(userId, doneMsg);
   else replyText(replyToken, doneMsg);
 }
@@ -1064,27 +1157,41 @@ function handleContributorImage_(userId, replyToken, user, messageId) {
       '位置情報付きの投稿は【順番: 短文テキスト→📸写真】です。\n短文を先に送ってから写真を送ってください。');
     return;
   }
+  var imageUrl;
   try {
-    mergeImageWithPendingThenFinalize_(userId, replyToken, user, fetchLineImageToDrive_(messageId));
+    imageUrl = fetchLineImageToDrive_(messageId);
   } catch (err) {
-    replyText(replyToken, '⚠️ 画像取得に失敗しました。');
+    webhookExecErr_('[handleContributorImage_] fetch ' + String(err.message || err));
+    replyText(replyToken, '⚠️ 画像取得に失敗しました。\n' + String(err.message || err));
+    return;
+  }
+  try {
+    mergeImageWithPendingThenFinalize_(userId, replyToken, user, imageUrl);
+  } catch (err) {
+    webhookExecErr_('[handleContributorImage_] finalize ' + String(err.message || err));
+    replyText(replyToken, '⚠️ 投稿の保存に失敗しました。もう一度お試しください。');
   }
 }
 
 function handleStoreImageIncoming_(userId, replyToken, user, messageId) {
+  var pending = loadPending_(userId);
+  if (!pending || !String(pending.message || '').trim()) {
+    replyText(replyToken, MSG.STORE_TEXT_BEFORE_PHOTO);
+    return;
+  }
+  var imageUrl;
   try {
-    var imageUrl = fetchLineImageToDrive_(messageId);
-    var pending  = loadPending_(userId);
-    if (pending && pending.message) {
-      mergeImageWithPendingThenFinalize_(userId, replyToken, user, imageUrl);
-      return;
-    }
-    var hadImage = !!(pending && pending.imageUrl);
-    savePending_(userId, user.fixedStoreId || '', '', imageUrl);
-    replyPendingImageAck_(replyToken, hadImage);
+    imageUrl = fetchLineImageToDrive_(messageId);
   } catch (err) {
-    webhookExecErr_('[handleStoreImageIncoming_] ' + String(err.message || err));
-    replyText(replyToken, '⚠️ 画像の取得に失敗しました。もう一度お試しください。');
+    webhookExecErr_('[handleStoreImageIncoming_] fetch ' + String(err.message || err));
+    replyText(replyToken, '⚠️ 画像の取得に失敗しました。\n' + String(err.message || err));
+    return;
+  }
+  try {
+    mergeImageWithPendingThenFinalize_(userId, replyToken, user, imageUrl);
+  } catch (err) {
+    webhookExecErr_('[handleStoreImageIncoming_] finalize ' + String(err.message || err));
+    replyText(replyToken, '⚠️ 投稿の保存に失敗しました。もう一度お試しください。');
   }
 }
 
@@ -1092,6 +1199,10 @@ function contributorHasGpsSession_(userId) {
   var sess = getSession_(userId);
   return sess.step === STEP_AWAITING_CONTENT &&
     sess.payload.lat != null && sess.payload.lng != null;
+}
+
+function notifyPendingExpired_(userId, replyToken) {
+  if (replyToken === 'PUSH') pushText(userId, MSG.STORE_PENDING_EXPIRED);
 }
 
 // --- pending のタイマーフラッシュ ---
@@ -1120,17 +1231,21 @@ function flushExpiredPending_(excludeUserId) {
     var message  = data[i][2] ? String(data[i][2]) : '';
     var imageUrl = data[i][4] ? String(data[i][4]) : '';
     sheet.deleteRow(i + 1);
-    if (!message.trim() && !imageUrl) continue;
 
     var user = getUserRecord_(userId);
     if (!isActiveUser_(user)) continue;
     if (user.role !== ROLE_STORE && user.role !== ROLE_CONTRIBUTOR) continue;
 
-    var sess = getSession_(userId);
-    if (user.role === ROLE_CONTRIBUTOR &&
-        sess.payload.lat != null && sess.payload.lng != null &&
-        !message.trim() && imageUrl) continue;
+    var hasText  = !!message.trim();
+    var hasImage = !!String(imageUrl || '').trim();
+    if (!hasText && !hasImage) continue;
 
+    if (!hasText || !hasImage) {
+      notifyPendingExpired_(userId, 'PUSH');
+      continue;
+    }
+
+    var sess = getSession_(userId);
     proceedToFinalizePost_(userId, 'PUSH', user, buildFlushPayload_(user, sess, message, imageUrl));
   }
 }
@@ -1488,9 +1603,10 @@ function buildHelpMessage_(userId) {
     flow = '🗺️ 招待コードで紐づけ後、かわら版を投稿できます。';
   } else if (u.role === ROLE_STORE) {
     flow =
-      '📝 かわら版の投稿順番: テキスト→📸写真\n' +
+      '📝 かわら版の投稿順番: テキスト→📸写真（📸写真は必須）\n' +
       'テキストは1行目=タイトル(' + LINE_LIMITS.MAX_TITLE_LENGTH + '字以内)、' +
       '2行目以降=本文(' + LINE_LIMITS.MAX_MESSAGE_LENGTH + '字以内)\n' +
+      'テキストを2回送ることはできません。写真の前にテキストを送ってください。\n' +
       '表示位置はお店の固定座標です（📍位置情報は不要）。\n' +
       '端末変更時は「登録解除」と入力してから、新端末で招待コードを再送してください。';
   } else {
